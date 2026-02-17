@@ -1,4 +1,4 @@
-// PLANT CARD PRO v3.2.2 - Correction du défilement lors de la saisie
+// PLANT CARD PRO v3.2.3 - Éditeur Visuel Relooké (Bleu)
 class PlantCard extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); }
   static getConfigElement() { return document.createElement("plant-card-editor"); }
@@ -57,25 +57,31 @@ class PlantCardEditor extends HTMLElement {
   set hass(hass) { this._hass = hass; }
 
   _render() {
-    if (this._initialRenderDone) return; // Empêche le re-rendu total à chaque frappe
+    if (this._initialRenderDone) return;
     
     this.innerHTML = `
       <style>
-        .edit-wrap{padding:10px;font-family:sans-serif;color:#333}
-        .section{background:#f0f0f0;padding:12px;border-radius:10px;margin-bottom:10px;border:1px solid #ddd}
-        input{width:100%;padding:8px;margin:5px 0;box-sizing:border-box;border-radius:5px;border:1px solid #ccc}
-        label{font-size:12px;font-weight:bold;color:#666}
-        .scard{background:white;padding:10px;border:1px solid #ddd;border-radius:8px;margin-bottom:8px}
-        .btn-add{width:100%;padding:12px;background:#4caf50;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold}
+        .edit-wrap{padding:12px;font-family:sans-serif;color:white;background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d); background-size: cover; border-radius:12px;}
+        /* Alternative Bleue plus sobre si le dégradé est trop fort : */
+        .edit-wrap{padding:15px;font-family:sans-serif;color:white;background: #1c2a48; border-radius:12px; border: 1px solid #3e5b99;}
+        
+        .section{background:rgba(255,255,255,0.1);padding:15px;border-radius:10px;margin-bottom:15px;border:1px solid rgba(255,255,255,0.2);backdrop-filter: blur(5px);}
+        input{width:100%;padding:10px;margin:8px 0;box-sizing:border-box;border-radius:6px;border:1px solid #3e5b99;background:#0d162a;color:white;}
+        label{font-size:13px;font-weight:bold;color:#a5b4fc;}
+        .scard{background:rgba(255,255,255,0.05);padding:12px;border:1px solid rgba(255,255,255,0.1);border-radius:10px;margin-bottom:10px;}
+        .btn-add{width:100%;padding:14px;background:#3b82f6;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold;box-shadow: 0 4px 6px rgba(0,0,0,0.2);transition: background 0.3s;}
+        .btn-add:hover{background:#2563eb;}
+        .del{color:#ff8a80;border:none;background:none;cursor:pointer;font-weight:bold;font-size:12px;}
       </style>
       <div class="edit-wrap">
+        <h3 style="margin-top:0;color:#60a5fa;">Configuration Visuelle</h3>
         <div class="section">
           <label>Nom de la plante</label><input id="n" data-conf="name" value="${this._config.name||""}">
           <label>URL Image</label><input id="img" data-conf="plant_image" value="${this._config.plant_image||""}">
-          <label>Batterie (sensor...)</label><input id="bat" data-conf="battery_sensor" value="${this._config.battery_sensor||""}">
+          <label>Batterie (entité)</label><input id="bat" data-conf="battery_sensor" value="${this._config.battery_sensor||""}">
         </div>
         <div id="s-list"></div>
-        <button id="add" class="btn-add">+ Ajouter un Capteur</button>
+        <button id="add" class="btn-add">+ AJOUTER UN CAPTEUR</button>
       </div>`;
 
     this._initialRenderDone = true;
@@ -106,19 +112,19 @@ class PlantCardEditor extends HTMLElement {
       d.className = "scard";
       d.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <b style="color:#4caf50">CAPTEUR ${i+1}</b>
-          <button class="del" data-idx="${i}" style="color:#f44336;border:none;background:none;cursor:pointer;font-weight:bold">Supprimer</button>
+          <b style="color:#60a5fa">CAPTEUR ${i+1}</b>
+          <button class="del" data-idx="${i}">Supprimer</button>
         </div>
-        <label>Nom</label><input class="sn" data-idx="${i}" value="${s.name}">
-        <label>Entité</label><input class="se" data-idx="${i}" value="${s.entity}">
-        <div style="display:flex;gap:5px">
-          <div><label>Icône</label><input class="si" data-idx="${i}" value="${s.icon}"></div>
-          <div><label>Unité</label><input class="su" data-idx="${i}" value="${s.unit}"></div>
-          <div><label>Max</label><input class="sm" data-idx="${i}" type="number" value="${s.max}"></div>
+        <label>Nom</label><input class="sn" value="${s.name}">
+        <label>Entité</label><input class="se" value="${s.entity}">
+        <div style="display:flex;gap:8px">
+          <div><label>Icône</label><input class="si" value="${s.icon}"></div>
+          <div><label>Unité</label><input class="su" value="${s.unit}"></div>
+          <div><label>Max</label><input class="sm" type="number" value="${s.max}"></div>
         </div>
-        <div style="display:flex;gap:5px;margin-top:5px;background:#fff9c4;padding:5px;border-radius:5px">
-          <div><label>Min (Rouge)</label><input class="sw" data-idx="${i}" type="number" value="${s.warn_below}"></div>
-          <div><label>Max (Rouge)</label><input class="sd" data-idx="${i}" type="number" value="${s.danger_above}"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <div style="flex:1"><label>Alerte Min</label><input class="sw" type="number" value="${s.warn_below}"></div>
+          <div style="flex:1"><label>Alerte Max</label><input class="sd" type="number" value="${s.danger_above}"></div>
         </div>`;
       
       const upd = (cls, field, isNum) => {
