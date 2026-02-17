@@ -26,7 +26,6 @@ class PlantCard extends HTMLElement {
     if (!this._config || !this._hass) return;
     const c = this._config;
     const getS = (eid) => this._hass.states[eid]?.state || "--";
-
     const imgPlante = c.plant_image || "/local/community/plantes-card/fleurdelune.png";
     const battery = c.battery_sensor ? getS(c.battery_sensor) : null;
 
@@ -36,7 +35,7 @@ class PlantCard extends HTMLElement {
         .bg-img{width:100%;height:100%;object-fit:cover;filter:blur(8px) brightness(.5);position:absolute;inset:0}
         .card{position:relative;padding:20px;backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.2);background:rgba(0,0,0,0.3);border-radius:24px}
         .header{display:flex;justify-content:center;align-items:center;gap:10px;margin-bottom:15px}
-        h1{margin:0;font-size:22px}
+        h1{margin:0;font-size:22px;text-align:center}
         .batt{font-size:12px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px}
         .plant-img{display:block;margin:0 auto 15px;max-height:160px;filter:drop-shadow(0 8px 8px rgba(0,0,0,0.5))}
         .row{margin:12px 0}
@@ -53,11 +52,9 @@ class PlantCard extends HTMLElement {
             ${battery ? `<span class="batt">🔋 ${battery}%</span>` : ""}
           </div>
           <img class="plant-img" src="${imgPlante}">
-          
           ${this._row("💧 Humidité", getS(c.moisture_sensor), "%", 100)}
           ${this._row("🌡️ Température", getS(c.temperature_sensor), "°C", 40)}
           ${this._row("☀️ Lumière", getS(c.light_sensor), " lx", 10000)}
-
           ${c.custom_sensors.map(s => this._row(s.name, getS(s.entity), s.unit, 100)).join('')}
         </div>
       </div>`;
@@ -75,7 +72,7 @@ class PlantCard extends HTMLElement {
 }
 
 // ============================================================
-// ÉDITEUR RÉPARÉ (SANS ONCLICK)
+// ÉDITEUR AVEC SÉLECTEUR NATIF (ha-entity-picker)
 // ============================================================
 class PlantCardEditor extends HTMLElement {
   setConfig(config) {
@@ -84,7 +81,11 @@ class PlantCardEditor extends HTMLElement {
     this._render();
   }
 
-  set hass(hass) { this._hass = hass; }
+  set hass(hass) {
+    this._hass = hass;
+    // On transmet le hass aux sélecteurs d'entités
+    this.querySelectorAll("ha-entity-picker").forEach(p => { p.hass = hass; });
+  }
 
   _render() {
     this.innerHTML = `
@@ -92,27 +93,28 @@ class PlantCardEditor extends HTMLElement {
         .editor{padding:10px; font-family: sans-serif; color: var(--primary-text-color)}
         .sect{background: var(--secondary-background-color); padding:12px; margin-bottom:10px; border-radius:8px; border: 1px solid var(--divider-color)}
         label{display:block; font-weight:bold; font-size:12px; margin: 10px 0 5px}
-        input{width:100%; padding:10px; box-sizing:border-box; background: var(--card-background-color); color: var(--primary-text-color); border:1px solid var(--divider-color); border-radius:6px}
+        input, ha-entity-picker{display:block; width:100%; margin-bottom:8px}
+        input{padding:10px; box-sizing:border-box; background: var(--card-background-color); color: var(--primary-text-color); border:1px solid var(--divider-color); border-radius:6px}
         button{cursor:pointer; padding:10px; width:100%; margin-top:10px; border-radius:6px; border:none; background:var(--primary-color); color:white; font-weight:bold}
         .btn-add{background: #4caf50; margin-top:20px}
         .btn-del{background: #f44336; font-size:11px; padding:5px; margin-top:10px}
-        .cust-row{border-left: 3px solid #4caf50; padding-left:10px; margin-bottom:15px}
+        .cust-row{border-left: 3px solid #4caf50; padding-left:10px; margin-bottom:15px; padding-top:5px}
       </style>
       <div class="editor">
         <div class="sect">
-          <label>Configuration Générale</label>
-          <input data-key="name" placeholder="Nom de la plante" value="${this._config.name || ""}">
+          <label>Nom de la plante</label>
+          <input data-key="name" value="${this._config.name || ""}">
           <label>Image de la plante (URL)</label>
-          <input data-key="plant_image" placeholder="/local/..." value="${this._config.plant_image || ""}">
-          <label>Entité Batterie</label>
-          <input data-key="battery_sensor" placeholder="sensor.batterie" value="${this._config.battery_sensor || ""}">
+          <input data-key="plant_image" value="${this._config.plant_image || ""}">
+          <label>Batterie</label>
+          <ha-entity-picker data-key="battery_sensor" .value="${this._config.battery_sensor}" .hass="${this._hass}" allow-custom-entity></ha-entity-picker>
         </div>
 
         <div class="sect">
-          <label>Capteurs Standards (Entités)</label>
-          <input data-key="moisture_sensor" placeholder="sensor.humidite" value="${this._config.moisture_sensor || ""}">
-          <input data-key="temperature_sensor" placeholder="sensor.temperature" value="${this._config.temperature_sensor || ""}" style="margin-top:8px">
-          <input data-key="light_sensor" placeholder="sensor.lumiere" value="${this._config.light_sensor || ""}" style="margin-top:8px">
+          <label>Capteurs Standards</label>
+          <ha-entity-picker label="Humidité" data-key="moisture_sensor" .value="${this._config.moisture_sensor}" .hass="${this._hass}"></ha-entity-picker>
+          <ha-entity-picker label="Température" data-key="temperature_sensor" .value="${this._config.temperature_sensor}" .hass="${this._hass}"></ha-entity-picker>
+          <ha-entity-picker label="Lumière" data-key="light_sensor" .value="${this._config.light_sensor}" .hass="${this._hass}"></ha-entity-picker>
         </div>
 
         <div class="sect">
@@ -120,10 +122,10 @@ class PlantCardEditor extends HTMLElement {
           <div id="custom-container">
             ${this._config.custom_sensors.map((s, i) => `
               <div class="cust-row">
-                <input class="cust-input" data-idx="${i}" data-field="name" placeholder="Label (ex: PH)" value="${s.name || ""}">
-                <input class="cust-input" data-idx="${i}" data-field="entity" placeholder="sensor.entite" value="${s.entity || ""}" style="margin:5px 0">
+                <input class="cust-input" data-idx="${i}" data-field="name" placeholder="Nom (ex: PH)" value="${s.name || ""}">
+                <ha-entity-picker class="cust-picker" data-idx="${i}" .value="${s.entity}" .hass="${this._hass}"></ha-entity-picker>
                 <input class="cust-input" data-idx="${i}" data-field="unit" placeholder="Unité (ex: %)" value="${s.unit || ""}">
-                <button class="btn-del" data-idx="${i}">Supprimer ce capteur</button>
+                <button class="btn-del" data-idx="${i}">Supprimer</button>
               </div>
             `).join('')}
           </div>
@@ -131,18 +133,25 @@ class PlantCardEditor extends HTMLElement {
         </div>
       </div>`;
 
-    this._setupEventListeners();
+    this._setupListeners();
   }
 
-  _setupEventListeners() {
-    // Inputs classiques
+  _setupListeners() {
+    // Inputs texte classiques
     this.querySelectorAll("input[data-key]").forEach(input => {
       input.addEventListener("change", (e) => {
         this._fire({ [e.target.dataset.key]: e.target.value });
       });
     });
 
-    // Inputs personnalisés
+    // Pickers classiques
+    this.querySelectorAll("ha-entity-picker[data-key]").forEach(picker => {
+      picker.addEventListener("value-changed", (e) => {
+        this._fire({ [e.target.dataset.key]: e.detail.value });
+      });
+    });
+
+    // Inputs et Pickers personnalisés
     this.querySelectorAll(".cust-input").forEach(input => {
       input.addEventListener("change", (e) => {
         const idx = e.target.dataset.idx;
@@ -153,13 +162,21 @@ class PlantCardEditor extends HTMLElement {
       });
     });
 
-    // Bouton Ajouter
+    this.querySelectorAll(".cust-picker").forEach(picker => {
+      picker.addEventListener("value-changed", (e) => {
+        const idx = e.target.dataset.idx;
+        const custom_sensors = [...this._config.custom_sensors];
+        custom_sensors[idx].entity = e.detail.value;
+        this._fire({ custom_sensors });
+      });
+    });
+
+    // Boutons
     this.querySelector("#add-btn").addEventListener("click", () => {
       const custom_sensors = [...this._config.custom_sensors, { name: "", entity: "", unit: "" }];
       this._fire({ custom_sensors });
     });
 
-    // Boutons Supprimer
     this.querySelectorAll(".btn-del").forEach(btn => {
       btn.addEventListener("click", (e) => {
         const idx = e.target.dataset.idx;
@@ -177,7 +194,7 @@ class PlantCardEditor extends HTMLElement {
       bubbles: true, 
       composed: true 
     }));
-    this._render(); // Force le rafraîchissement visuel de l'éditeur
+    this._render();
   }
 }
 
