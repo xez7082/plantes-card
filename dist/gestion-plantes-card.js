@@ -8,17 +8,15 @@ class PlantCard extends HTMLElement {
 
   static getStubConfig() {
     return {
-      name: "Ma Nouvelle Plante",
+      name: "Ma Plante",
       plant_image: "/local/fleurdelune.png",
-      custom_sensors: [
-        { name: "Humidité", entity: "sensor.votre_capteur_moisture", unit: "%" }
-      ]
+      sensors: []
     };
   }
 
   setConfig(config) {
     this._config = JSON.parse(JSON.stringify(config));
-    if (!this._config.custom_sensors) this._config.custom_sensors = [];
+    if (!this._config.sensors) this._config.sensors = [];
     this._render();
   }
 
@@ -30,143 +28,118 @@ class PlantCard extends HTMLElement {
   _render() {
     if (!this._config || !this._hass) return;
     const c = this._config;
-    const getS = (eid) => this._hass.states[eid]?.state || "--";
     const img = c.plant_image || "/local/fleurdelune.png";
 
     this.shadowRoot.innerHTML = `
       <style>
-        .card { background: rgba(20,20,20,0.8); border-radius: 20px; padding: 20px; color: white; font-family: sans-serif; border: 1px solid #444; }
-        .header { text-align: center; font-size: 22px; margin-bottom: 15px; letter-spacing: 1px; }
-        .plant-img { display: block; width: 150px; margin: 0 auto 20px; border-radius: 15px; filter: drop-shadow(0 5px 15px rgba(0,0,0,0.5)); }
-        .sensor-row { margin-bottom: 15px; }
-        .label { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 5px; }
-        .bar-bg { background: rgba(255,255,255,0.1); height: 10px; border-radius: 5px; overflow: hidden; }
-        .bar-fill { background: linear-gradient(90deg, #4caf50, #81c784); height: 100%; transition: width 1s ease-out; }
-        .unit { color: #888; font-size: 12px; margin-left: 3px; }
-        .val { font-weight: bold; color: #5ce1e6; }
+        .card { background: #1c1c1c; border-radius: 15px; padding: 15px; color: white; font-family: Segoe UI, Roboto; border: 1px solid #333; }
+        .header { text-align: center; font-size: 1.2em; margin-bottom: 15px; font-weight: 500; color: #4caf50; }
+        .plant-img { display: block; width: 100px; height: 100px; object-fit: cover; margin: 0 auto 15px; border-radius: 50%; border: 2px solid #4caf50; }
+        .sensor-row { margin-bottom: 12px; }
+        .info { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+        .bar-bg { background: #333; height: 6px; border-radius: 3px; }
+        .bar-fill { background: #4caf50; height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+        .val { font-weight: bold; }
       </style>
       <div class="card">
-        <div class="header">${c.name || "Plante"}</div>
-        <img class="plant-img" src="${img}" onerror="this.style.display='none'">
-        
-        <div id="sensors">
-          ${(c.custom_sensors || []).map(s => this._drawRow(s.name, getS(s.entity), s.unit)).join('')}
-        </div>
-      </div>
-    `;
-  }
-
-  _drawRow(label, val, unit) {
-    if (val === "--" || val === "unknown") return "";
-    const num = parseFloat(val) || 0;
-    // On calcule un % arbitraire pour la barre (ici basé sur 100)
-    const pct = Math.min(Math.max(num, 0), 100); 
-    return `
-      <div class="sensor-row">
-        <div class="label"><span>${label}</span><span><span class="val">${val}</span><span class="unit">${unit}</span></span></div>
-        <div class="bar-bg"><div class="bar-fill" style="width: ${pct}%"></div></div>
+        <div class="header">${c.name}</div>
+        <img class="plant-img" src="${img}">
+        ${c.sensors.map(s => {
+          const stateObj = this._hass.states[s.entity];
+          const val = stateObj ? stateObj.state : "--";
+          const num = parseFloat(val) || 0;
+          return `
+            <div class="sensor-row">
+              <div class="info"><span>${s.name}</span><span><span class="val">${val}</span> ${s.unit}</span></div>
+              <div class="bar-bg"><div class="bar-fill" style="width: ${Math.min(num, 100)}%"></div></div>
+            </div>
+          `;
+        }).join('')}
       </div>
     `;
   }
 }
 
 // ==========================================
-// ÉDITEUR FLEXIBLE (SANS CAPTEURS FIGÉS)
+// ÉDITEUR MANUEL SANS PICKER (ANTI-BUG)
 // ==========================================
 class PlantCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = JSON.parse(JSON.stringify(config));
-    if (!this._config.custom_sensors) this._config.custom_sensors = [];
+    if (!this._config.sensors) this._config.sensors = [];
     this._render();
   }
 
-  set hass(hass) { this._hass = hass; }
-
   _render() {
     this.innerHTML = `
-      <style>
-        .ed-card { padding: 12px; color: var(--primary-text-color); line-height: 1.6; }
-        .ed-row { margin-bottom: 15px; padding: 10px; background: var(--secondary-background-color); border-radius: 8px; }
-        label { display: block; font-weight: bold; font-size: 12px; text-transform: uppercase; color: var(--secondary-text-color); }
-        input { width: 100%; padding: 8px; box-sizing: border-box; border-radius: 4px; border: 1px solid #ccc; background: var(--card-background-color); color: var(--primary-text-color); }
-        .c-item { border: 1px solid #444; padding: 10px; margin-top: 10px; position: relative; border-radius: 6px; }
-        .btn-add { background: #4caf50; color: white; border: none; padding: 10px; width: 100%; border-radius: 5px; cursor: pointer; font-weight: bold; }
-        .btn-del { background: #f44336; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-top: 8px; font-size: 10px; }
-        .flex { display: flex; gap: 5px; margin-top: 5px; }
-      </style>
-      <div class="ed-card">
-        <div class="ed-row">
-          <label>Nom de la plante</label>
-          <input id="name" value="${this._config.name || ""}">
-          <label style="margin-top:10px">URL Image</label>
-          <input id="img" value="${this._config.plant_image || ""}">
+      <div style="padding: 10px;">
+        <div style="margin-bottom: 15px;">
+          <label style="display:block; font-size: 12px; color: grey;">Nom de la plante</label>
+          <input id="name" style="width:100%; padding: 8px;" value="${this._config.name || ""}">
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+          <label style="display:block; font-size: 12px; color: grey;">Chemin de l'image</label>
+          <input id="img" style="width:100%; padding: 8px;" value="${this._config.plant_image || ""}">
         </div>
 
-        <p><b>Liste de vos capteurs :</b></p>
-        <div id="custom-list">
-          ${this._config.custom_sensors.map((s, i) => `
-            <div class="c-item">
-              <label>Titre (ex: Humidité)</label>
-              <input class="c-n" data-idx="${i}" value="${s.name}">
-              <div class="flex">
-                <div style="flex:2">
-                  <label>Entité (sensor.xxx)</label>
-                  <input class="c-e" data-idx="${i}" value="${s.entity}">
-                </div>
-                <div style="flex:1">
-                  <label>Unité</label>
-                  <input class="c-u" data-idx="${i}" value="${s.unit}">
-                </div>
-              </div>
-              <button class="btn-del" data-idx="${i}">Supprimer ce capteur</button>
+        <div id="list">
+          ${this._config.sensors.map((s, i) => `
+            <div style="background: #f0f0f0; padding: 10px; margin-bottom: 10px; border-radius: 5px; color: black;">
+              <input class="n" data-i="${i}" placeholder="Titre (ex: Humidité)" value="${s.name}" style="width:90%; margin-bottom:5px;">
+              <input class="e" data-i="${i}" placeholder="sensor.votre_entite" value="${s.entity}" style="width:90%; margin-bottom:5px;">
+              <input class="u" data-i="${i}" placeholder="Unité (ex: %)" value="${s.unit}" style="width:40%;">
+              <button class="del" data-i="${i}" style="background:red; color:white; border:none; padding:5px;">X</button>
             </div>
           `).join('')}
         </div>
         
-        <button id="add" class="btn-add" style="margin-top:15px">+ Ajouter un capteur</button>
+        <button id="add" style="width:100%; padding: 10px; background: #4caf50; color: white; border: none; cursor: pointer;">
+          + AJOUTER UN CAPTEUR
+        </button>
       </div>
     `;
 
-    this._attach();
+    this._setupEvents();
   }
 
-  _attach() {
-    this.querySelector("#name").onchange = (e) => this._save("name", e.target.value);
-    this.querySelector("#img").onchange = (e) => this._save("plant_image", e.target.value);
-
-    this.querySelectorAll(".c-n").forEach(el => el.onchange = (e) => {
-      this._config.custom_sensors[e.target.dataset.idx].name = e.target.value;
-      this._save("custom_sensors", this._config.custom_sensors);
+  _setupEvents() {
+    this.querySelector("#name").onchange = (e) => this._upd("name", e.target.value);
+    this.querySelector("#img").onchange = (e) => this._upd("plant_image", e.target.value);
+    
+    this.querySelectorAll(".n").forEach(el => el.onchange = (e) => {
+      this._config.sensors[e.target.dataset.i].name = e.target.value;
+      this._upd("sensors", this._config.sensors);
     });
-    this.querySelectorAll(".c-e").forEach(el => el.onchange = (e) => {
-      this._config.custom_sensors[e.target.dataset.idx].entity = e.target.value;
-      this._save("custom_sensors", this._config.custom_sensors);
+    this.querySelectorAll(".e").forEach(el => el.onchange = (e) => {
+      this._config.sensors[e.target.dataset.i].entity = e.target.value;
+      this._upd("sensors", this._config.sensors);
     });
-    this.querySelectorAll(".c-u").forEach(el => el.onchange = (e) => {
-      this._config.custom_sensors[e.target.dataset.idx].unit = e.target.value;
-      this._save("custom_sensors", this._config.custom_sensors);
+    this.querySelectorAll(".u").forEach(el => el.onchange = (e) => {
+      this._config.sensors[e.target.dataset.i].unit = e.target.value;
+      this._upd("sensors", this._config.sensors);
     });
 
     this.querySelector("#add").onclick = () => {
-      this._config.custom_sensors.push({name: "Nouveau", entity: "sensor.", unit: ""});
-      this._save("custom_sensors", this._config.custom_sensors);
+      this._config.sensors.push({name: "", entity: "", unit: ""});
+      this._upd("sensors", this._config.sensors);
     };
 
-    this.querySelectorAll(".btn-del").forEach(btn => btn.onclick = (e) => {
-      this._config.custom_sensors.splice(e.target.dataset.idx, 1);
-      this._save("custom_sensors", this._config.custom_sensors);
+    this.querySelectorAll(".del").forEach(el => el.onclick = (e) => {
+      this._config.sensors.splice(e.target.dataset.i, 1);
+      this._upd("sensors", this._config.sensors);
     });
   }
 
-  _save(key, val) {
+  _upd(key, val) {
     this._config[key] = val;
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true }));
+    const event = new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true });
+    this.dispatchEvent(event);
     this._render();
   }
 }
 
 customElements.define("plant-card", PlantCard);
 customElements.define("plant-card-editor", PlantCardEditor);
-
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "plant-card", name: "Plant Card Pro", preview: true });
