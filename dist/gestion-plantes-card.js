@@ -14,7 +14,12 @@ class PlantCard extends HTMLElement {
     };
   }
 
-  setConfig(config) { this._config = config; this._render(); }
+  setConfig(config) { 
+    this._config = { ...config };
+    this._config.custom_sensors = config.custom_sensors || [];
+    this._render(); 
+  }
+  
   set hass(hass) { this._hass = hass; this._render(); }
 
   _render() {
@@ -22,21 +27,14 @@ class PlantCard extends HTMLElement {
     const c = this._config;
     const getS = (eid) => this._hass.states[eid]?.state || "--";
 
-    // Image par défaut si vide
     const imgPlante = c.plant_image || "/local/community/plantes-card/fleurdelune.png";
     const battery = c.battery_sensor ? getS(c.battery_sensor) : null;
-
-    const bar = (val, max = 100) => {
-      const v = parseFloat(val);
-      const w = isNaN(v) ? 0 : Math.min(Math.max((v / max) * 100, 0), 100);
-      return `<div class="bar"><div class="fill" style="width:${w}%"></div></div>`;
-    };
 
     this.shadowRoot.innerHTML = `
       <style>
         .bg{position:relative;border-radius:24px;overflow:hidden;color:white;font-family:sans-serif;background:#222}
         .bg-img{width:100%;height:100%;object-fit:cover;filter:blur(8px) brightness(.5);position:absolute;inset:0}
-        .card{position:relative;padding:20px;backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.2);background:rgba(0,0,0,0.2);border-radius:24px}
+        .card{position:relative;padding:20px;backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.2);background:rgba(0,0,0,0.3);border-radius:24px}
         .header{display:flex;justify-content:center;align-items:center;gap:10px;margin-bottom:15px}
         h1{margin:0;font-size:22px}
         .batt{font-size:12px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px}
@@ -60,13 +58,13 @@ class PlantCard extends HTMLElement {
           ${this._row("🌡️ Température", getS(c.temperature_sensor), "°C", 40)}
           ${this._row("☀️ Lumière", getS(c.light_sensor), " lx", 10000)}
 
-          ${(c.custom_sensors || []).map(s => this._row(s.name, getS(s.entity), s.unit, 100)).join('')}
+          ${c.custom_sensors.map(s => this._row(s.name, getS(s.entity), s.unit, 100)).join('')}
         </div>
       </div>`;
   }
 
   _row(label, val, unit, max) {
-    if (val === "--") return "";
+    if (!val || val === "--") return "";
     const v = parseFloat(val);
     const w = isNaN(v) ? 0 : Math.min(Math.max((v / max) * 100, 0), 100);
     return `<div class="row">
@@ -77,11 +75,12 @@ class PlantCard extends HTMLElement {
 }
 
 // ============================================================
-// ÉDITEUR AVEC AJOUT DE CAPTEURS DYNAMIQUES
+// ÉDITEUR RÉPARÉ (SANS ONCLICK)
 // ============================================================
 class PlantCardEditor extends HTMLElement {
   setConfig(config) {
-    this._config = { custom_sensors: [], ...config };
+    this._config = { ...config };
+    if (!this._config.custom_sensors) this._config.custom_sensors = [];
     this._render();
   }
 
@@ -91,68 +90,94 @@ class PlantCardEditor extends HTMLElement {
     this.innerHTML = `
       <style>
         .editor{padding:10px; font-family: sans-serif; color: var(--primary-text-color)}
-        .sect{border:1px solid #444; padding:10px; margin-bottom:10px; border-radius:8px}
+        .sect{background: var(--secondary-background-color); padding:12px; margin-bottom:10px; border-radius:8px; border: 1px solid var(--divider-color)}
         label{display:block; font-weight:bold; font-size:12px; margin: 10px 0 5px}
-        input{width:100%; padding:8px; box-sizing:border-box; background: #222; color: white; border:1px solid #444; border-radius:4px}
-        button{cursor:pointer; padding:8px; width:100%; margin-top:10px; border-radius:4px; border:none; background:#4caf50; color:white}
-        .del{background:#f44336; margin-top:5px; padding:4px}
+        input{width:100%; padding:10px; box-sizing:border-box; background: var(--card-background-color); color: var(--primary-text-color); border:1px solid var(--divider-color); border-radius:6px}
+        button{cursor:pointer; padding:10px; width:100%; margin-top:10px; border-radius:6px; border:none; background:var(--primary-color); color:white; font-weight:bold}
+        .btn-add{background: #4caf50; margin-top:20px}
+        .btn-del{background: #f44336; font-size:11px; padding:5px; margin-top:10px}
+        .cust-row{border-left: 3px solid #4caf50; padding-left:10px; margin-bottom:15px}
       </style>
       <div class="editor">
         <div class="sect">
-          <label>Nom de la plante</label>
-          <input data-key="name" value="${this._config.name || ""}">
+          <label>Configuration Générale</label>
+          <input data-key="name" placeholder="Nom de la plante" value="${this._config.name || ""}">
           <label>Image de la plante (URL)</label>
-          <input data-key="plant_image" value="${this._config.plant_image || ""}">
-          <label>Capteur Batterie (Entité)</label>
-          <input data-key="battery_sensor" value="${this._config.battery_sensor || ""}">
+          <input data-key="plant_image" placeholder="/local/..." value="${this._config.plant_image || ""}">
+          <label>Entité Batterie</label>
+          <input data-key="battery_sensor" placeholder="sensor.batterie" value="${this._config.battery_sensor || ""}">
         </div>
 
         <div class="sect">
-          <label>Capteurs de base (Entités)</label>
-          <input data-key="moisture_sensor" placeholder="sensor.humidité" value="${this._config.moisture_sensor || ""}">
-          <input data-key="temperature_sensor" placeholder="sensor.température" value="${this._config.temperature_sensor || ""}" style="margin-top:5px">
+          <label>Capteurs Standards (Entités)</label>
+          <input data-key="moisture_sensor" placeholder="sensor.humidite" value="${this._config.moisture_sensor || ""}">
+          <input data-key="temperature_sensor" placeholder="sensor.temperature" value="${this._config.temperature_sensor || ""}" style="margin-top:8px">
+          <input data-key="light_sensor" placeholder="sensor.lumiere" value="${this._config.light_sensor || ""}" style="margin-top:8px">
         </div>
 
-        <div id="custom-zone">
-          <label>Capteurs Personnalisés</label>
-          ${this._config.custom_sensors.map((s, i) => `
-            <div class="sect">
-              <input placeholder="Nom (ex: PH)" oninput="this.getRootNode().host._updCust(${i}, 'name', this.value)" value="${s.name}">
-              <input placeholder="Entité" oninput="this.getRootNode().host._updCust(${i}, 'entity', this.value)" value="${s.entity}" style="margin:5px 0">
-              <input placeholder="Unité" oninput="this.getRootNode().host._updCust(${i}, 'unit', this.value)" value="${s.unit}">
-              <button class="del" onclick="this.getRootNode().host._delCust(${i})">Supprimer</button>
-            </div>
-          `).join('')}
-          <button onclick="this.getRootNode().host._addCust()">+ Ajouter un capteur</button>
+        <div class="sect">
+          <label>Capteurs Supplémentaires</label>
+          <div id="custom-container">
+            ${this._config.custom_sensors.map((s, i) => `
+              <div class="cust-row">
+                <input class="cust-input" data-idx="${i}" data-field="name" placeholder="Label (ex: PH)" value="${s.name || ""}">
+                <input class="cust-input" data-idx="${i}" data-field="entity" placeholder="sensor.entite" value="${s.entity || ""}" style="margin:5px 0">
+                <input class="cust-input" data-idx="${i}" data-field="unit" placeholder="Unité (ex: %)" value="${s.unit || ""}">
+                <button class="btn-del" data-idx="${i}">Supprimer ce capteur</button>
+              </div>
+            `).join('')}
+          </div>
+          <button class="btn-add" id="add-btn">+ Ajouter un capteur</button>
         </div>
       </div>`;
 
-    this.querySelectorAll("input[data-key]").forEach(i => {
-      i.onchange = (e) => this._fire({ [e.target.dataset.key]: e.target.value });
+    this._setupEventListeners();
+  }
+
+  _setupEventListeners() {
+    // Inputs classiques
+    this.querySelectorAll("input[data-key]").forEach(input => {
+      input.addEventListener("change", (e) => {
+        this._fire({ [e.target.dataset.key]: e.target.value });
+      });
     });
-  }
 
-  _addCust() {
-    const custom_sensors = [...this._config.custom_sensors, { name: "", entity: "", unit: "" }];
-    this._fire({ custom_sensors });
-  }
+    // Inputs personnalisés
+    this.querySelectorAll(".cust-input").forEach(input => {
+      input.addEventListener("change", (e) => {
+        const idx = e.target.dataset.idx;
+        const field = e.target.dataset.field;
+        const custom_sensors = [...this._config.custom_sensors];
+        custom_sensors[idx][field] = e.target.value;
+        this._fire({ custom_sensors });
+      });
+    });
 
-  _delCust(i) {
-    const custom_sensors = [...this._config.custom_sensors];
-    custom_sensors.splice(i, 1);
-    this._fire({ custom_sensors });
-  }
+    // Bouton Ajouter
+    this.querySelector("#add-btn").addEventListener("click", () => {
+      const custom_sensors = [...this._config.custom_sensors, { name: "", entity: "", unit: "" }];
+      this._fire({ custom_sensors });
+    });
 
-  _updCust(i, key, val) {
-    const custom_sensors = [...this._config.custom_sensors];
-    custom_sensors[i][key] = val;
-    this._fire({ custom_sensors });
+    // Boutons Supprimer
+    this.querySelectorAll(".btn-del").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        const idx = e.target.dataset.idx;
+        const custom_sensors = [...this._config.custom_sensors];
+        custom_sensors.splice(idx, 1);
+        this._fire({ custom_sensors });
+      });
+    });
   }
 
   _fire(change) {
     this._config = { ...this._config, ...change };
-    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true }));
-    this._render();
+    this.dispatchEvent(new CustomEvent("config-changed", { 
+      detail: { config: this._config }, 
+      bubbles: true, 
+      composed: true 
+    }));
+    this._render(); // Force le rafraîchissement visuel de l'éditeur
   }
 }
 
