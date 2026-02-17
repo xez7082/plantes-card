@@ -11,7 +11,8 @@ class PlantCard extends HTMLElement {
   }
 
   setConfig(config) {
-    this._config = config;
+    this._config = JSON.parse(JSON.stringify(config));
+    if (!this._config.sensors) this._config.sensors = [];
     this._render();
   }
 
@@ -24,149 +25,145 @@ class PlantCard extends HTMLElement {
     if (!this._config || !this._hass) return;
     const c = this._config;
     const img = c.plant_image || "/local/fleurdelune.png";
-    
-    // Gestion de la batterie
     const battState = c.battery_sensor ? this._hass.states[c.battery_sensor] : null;
-    const battVal = battState ? battState.state : null;
 
     this.shadowRoot.innerHTML = `
       <style>
-        .card { background: var(--ha-card-background, #1c1c1c); border-radius: 15px; padding: 15px; color: white; border: 1px solid #333; position: relative; }
-        .header-container { display: flex; justify-content: center; align-items: center; gap: 10px; margin-bottom: 15px; }
-        .header { font-size: 1.2em; font-weight: 500; color: #4caf50; }
-        .battery { display: flex; align-items: center; font-size: 0.8em; color: #888; }
-        .plant-img { display: block; width: 100px; height: 100px; object-fit: cover; margin: 0 auto 15px; border-radius: 50%; border: 2px solid #4caf50; }
-        .sensor-row { margin-bottom: 12px; }
-        .info { display: flex; align-items: center; font-size: 13px; margin-bottom: 4px; }
-        .info ha-icon { margin-right: 8px; --mdc-icon-size: 18px; color: #4caf50; }
-        .label-text { flex-grow: 1; }
-        .bar-bg { background: #333; height: 6px; border-radius: 3px; }
-        .bar-fill { background: #4caf50; height: 100%; border-radius: 3px; transition: width 0.6s ease; }
-        .val { font-weight: bold; margin-left: 5px; }
+        .card { background: var(--ha-card-background, #1c1c1c); border-radius: 15px; padding: 20px; color: white; border: 1px solid #333; }
+        .header-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .header { font-size: 1.4em; font-weight: bold; color: #4caf50; }
+        .battery { display: flex; align-items: center; gap: 4px; color: #888; font-size: 0.9em; }
+        .plant-img { display: block; width: 120px; height: 120px; object-fit: cover; margin: 0 auto 20px; border-radius: 50%; border: 3px solid #4caf50; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        .sensor-row { margin-bottom: 15px; }
+        .info { display: flex; align-items: center; font-size: 14px; margin-bottom: 6px; }
+        .info ha-icon { margin-right: 10px; --mdc-icon-size: 20px; color: #4caf50; }
+        .label-text { flex-grow: 1; opacity: 0.9; }
+        .bar-bg { background: rgba(255,255,255,0.1); height: 8px; border-radius: 4px; }
+        .bar-fill { background: linear-gradient(90deg, #4caf50, #81c784); height: 100%; border-radius: 4px; transition: width 1s ease; }
+        .val { font-weight: bold; color: #fff; }
+        .unit { font-size: 0.8em; color: #aaa; margin-left: 2px; }
       </style>
       <div class="card">
         <div class="header-container">
           <div class="header">${c.name}</div>
-          ${battVal ? `<div class="battery"><ha-icon icon="mdi:battery"></ha-icon>${battVal}%</div>` : ''}
+          ${battState ? `<div class="battery"><ha-icon icon="mdi:battery"></ha-icon>${battState.state}%</div>` : ''}
         </div>
         <img class="plant-img" src="${img}">
-        ${(c.sensors || []).map(s => {
-          const stateObj = this._hass.states[s.entity];
-          const val = stateObj ? stateObj.state : "--";
-          const icon = s.icon || "mdi:sprout";
-          const num = parseFloat(val) || 0;
-          return `
-            <div class="sensor-row">
-              <div class="info">
-                <ha-icon icon="${icon}"></ha-icon>
-                <span class="label-text">${s.name}</span>
-                <span><span class="val">${val}</span> ${s.unit}</span>
+        <div id="sensors">
+          ${c.sensors.map(s => {
+            const stateObj = this._hass.states[s.entity];
+            const val = stateObj ? stateObj.state : "--";
+            const num = parseFloat(val) || 0;
+            return `
+              <div class="sensor-row">
+                <div class="info">
+                  <ha-icon icon="${s.icon || 'mdi:sprout'}"></ha-icon>
+                  <span class="label-text">${s.name}</span>
+                  <span><span class="val">${val}</span><span class="unit">${s.unit}</span></span>
+                </div>
+                <div class="bar-bg"><div class="bar-fill" style="width: ${Math.min(num, 100)}%"></div></div>
               </div>
-              <div class="bar-bg"><div class="bar-fill" style="width: ${Math.min(num, 100)}%"></div></div>
-            </div>
-          `;
-        }).join('')}
+            `;
+          }).join('')}
+        </div>
       </div>
     `;
   }
 }
 
 // ==========================================
-// ÉDITEUR AVEC RECHERCHE AUTOMATIQUE
+// ÉDITEUR ROBUSTE (SANS COMPOSANTS FRAGILES)
 // ==========================================
 class PlantCardEditor extends HTMLElement {
   setConfig(config) {
-    this._config = config;
+    this._config = JSON.parse(JSON.stringify(config));
     this._render();
   }
 
-  set hass(hass) {
-    this._hass = hass;
-    this._render();
-  }
+  set hass(hass) { this._hass = hass; }
 
   _render() {
-    if (!this._hass) return;
     this.innerHTML = `
-      <div style="padding: 10px; display: flex; flex-direction: column; gap: 15px;">
-        <paper-input label="Nom de la plante" id="name" value="${this._config.name || ""}"></paper-input>
-        <paper-input label="URL de l'image" id="img" value="${this._config.plant_image || ""}"></paper-input>
-        
-        <div>
-          <label>Capteur Batterie</label>
-          <ha-entity-picker .hass="${this._hass}" .value="${this._config.battery_sensor}" id="batt" .includeDomains='["sensor"]' allow-custom-entity></ha-entity-picker>
+      <style>
+        .ed-container { padding: 10px; font-family: sans-serif; }
+        .field { margin-bottom: 15px; }
+        label { display: block; font-size: 12px; margin-bottom: 5px; color: var(--secondary-text-color); }
+        input { width: 100%; padding: 10px; box-sizing: border-box; border-radius: 4px; border: 1px solid #444; background: var(--card-background-color); color: var(--primary-text-color); }
+        .sensor-block { border: 1px solid #444; padding: 15px; border-radius: 8px; margin-bottom: 15px; background: rgba(0,0,0,0.2); }
+        .btn { padding: 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn-add { background: #4caf50; color: white; width: 100%; }
+        .btn-del { background: #f44336; color: white; margin-top: 10px; }
+        .grid { display: flex; gap: 10px; margin-top: 10px; }
+      </style>
+      <div class="ed-container">
+        <div class="field">
+          <label>Nom de la plante</label>
+          <input id="name" value="${this._config.name || ""}">
+        </div>
+        <div class="field">
+          <label>Image URL</label>
+          <input id="img" value="${this._config.plant_image || ""}">
+        </div>
+        <div class="field">
+          <label>Entité Batterie (ex: sensor.plant_batt)</label>
+          <input id="batt" value="${this._config.battery_sensor || ""}">
         </div>
 
-        <hr style="width:100%; border: 0.5px solid #555;">
-        <strong>Capteurs personnalisés</strong>
-        <div id="list">
+        <hr>
+        <p><b>Capteurs</b></p>
+        <div id="s-list">
           ${(this._config.sensors || []).map((s, i) => `
-            <div style="border: 1px solid #555; padding: 10px; border-radius: 8px; margin-bottom: 10px; background: rgba(255,255,255,0.05);">
-              <paper-input label="Nom (ex: Humidité)" class="n" data-i="${i}" value="${s.name}"></paper-input>
-              <ha-entity-picker .hass="${this._hass}" .value="${s.entity}" class="e" data-i="${i}" .includeDomains='["sensor"]' allow-custom-entity></ha-entity-picker>
-              <div style="display: flex; gap: 10px;">
-                <paper-input label="Icône (mdi:xxx)" class="ic" data-i="${i}" value="${s.icon || "mdi:sprout"}" style="flex:1"></paper-input>
-                <paper-input label="Unité" class="u" data-i="${i}" value="${s.unit}" style="flex:1"></paper-input>
+            <div class="sensor-block">
+              <label>Nom du capteur</label>
+              <input class="n" data-i="${i}" value="${s.name}">
+              <label style="margin-top:10px">Entité (Copier/Coller l'ID)</label>
+              <input class="e" data-i="${i}" value="${s.entity}">
+              <div class="grid">
+                <div style="flex:1"><label>Icône</label><input class="ic" data-i="${i}" value="${s.icon || ""}"></div>
+                <div style="flex:1"><label>Unité</label><input class="u" data-i="${i}" value="${s.unit || ""}"></div>
               </div>
-              <mwc-button class="del" data-i="${i}" style="--mdc-theme-primary: #ff5252;">Supprimer</mwc-button>
+              <button class="btn btn-del" data-i="${i}">Supprimer</button>
             </div>
           `).join('')}
         </div>
-        <mwc-button raised id="add">+ Ajouter un capteur</mwc-button>
+        <button id="add" class="btn btn-add">+ Ajouter un capteur</button>
       </div>
     `;
 
-    this._setupEvents();
+    this._attach();
   }
 
-  _setupEvents() {
-    const upd = (newConfig) => {
-      this._config = newConfig;
-      this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config } }));
+  _attach() {
+    const save = () => {
+      this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true }));
     };
 
-    this.querySelector("#name").addEventListener("value-changed", (e) => upd({...this._config, name: e.detail.value}));
-    this.querySelector("#img").addEventListener("value-changed", (e) => upd({...this._config, plant_image: e.detail.value}));
-    this.querySelector("#batt").addEventListener("value-changed", (e) => upd({...this._config, battery_sensor: e.detail.value}));
+    this.querySelector("#name").onchange = (e) => { this._config.name = e.target.value; save(); };
+    this.querySelector("#img").onchange = (e) => { this._config.plant_image = e.target.value; save(); };
+    this.querySelector("#batt").onchange = (e) => { this._config.battery_sensor = e.target.value; save(); };
 
-    this.querySelectorAll(".n").forEach(el => el.addEventListener("value-changed", (e) => {
-      const s = [...this._config.sensors];
-      s[el.dataset.i].name = e.detail.value;
-      upd({...this._config, sensors: s});
-    }));
-
-    this.querySelectorAll(".e").forEach(el => el.addEventListener("value-changed", (e) => {
-      const s = [...this._config.sensors];
-      s[el.dataset.i].entity = e.detail.value;
-      upd({...this._config, sensors: s});
-    }));
-
-    this.querySelectorAll(".ic").forEach(el => el.addEventListener("value-changed", (e) => {
-      const s = [...this._config.sensors];
-      s[el.dataset.i].icon = e.detail.value;
-      upd({...this._config, sensors: s});
-    }));
-
-    this.querySelectorAll(".u").forEach(el => el.addEventListener("value-changed", (e) => {
-      const s = [...this._config.sensors];
-      s[el.dataset.i].unit = e.detail.value;
-      upd({...this._config, sensors: s});
-    }));
+    this.querySelectorAll(".n").forEach(el => el.onchange = (e) => { this._config.sensors[e.target.dataset.i].name = e.target.value; save(); });
+    this.querySelectorAll(".e").forEach(el => el.onchange = (e) => { this._config.sensors[e.target.dataset.i].entity = e.target.value; save(); });
+    this.querySelectorAll(".ic").forEach(el => el.onchange = (e) => { this._config.sensors[e.target.dataset.i].icon = e.target.value; save(); });
+    this.querySelectorAll(".u").forEach(el => el.onchange = (e) => { this._config.sensors[e.target.dataset.i].unit = e.target.value; save(); });
 
     this.querySelector("#add").onclick = () => {
-      const s = [...(this._config.sensors || []), {name: "Nouveau", entity: "", unit: "", icon: "mdi:sprout"}];
-      upd({...this._config, sensors: s});
+      if (!this._config.sensors) this._config.sensors = [];
+      this._config.sensors.push({name: "Nouveau", entity: "", icon: "mdi:water", unit: "%"});
+      save();
+      this._render();
     };
 
-    this.querySelectorAll(".del").forEach(el => el.onclick = () => {
-      const s = [...this._config.sensors];
-      s.splice(el.dataset.i, 1);
-      upd({...this._config, sensors: s});
+    this.querySelectorAll(".btn-del").forEach(el => el.onclick = (e) => {
+      this._config.sensors.splice(e.target.dataset.i, 1);
+      save();
+      this._render();
     });
   }
 }
 
 customElements.define("plant-card", PlantCard);
 customElements.define("plant-card-editor", PlantCardEditor);
+
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "plant-card", name: "Plant Card Pro", preview: true });
