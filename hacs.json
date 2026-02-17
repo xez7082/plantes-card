@@ -2,5 +2,9 @@
   "name": "Gestion des Plantes (xez7082)",
   "content_type": "plugin",
   "render_readme": true,
-  "filename": "gestion-plantes-card.js"
+  "filename": "gestion-plantes-card.js",
+  "zip_release": false,
+  "manifest": {
+    "location": "/dist/gestion-plantes-card.js"
+  }
 }
