@@ -1,4 +1,4 @@
-// PLANT CARD PRO v3.1.6 - Scan Profond de l'entité de recherche
+// PLANT CARD PRO v3.1.7 - Force Refresh & Auto-Retry
 class PlantCard extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); }
   static getConfigElement() { return document.createElement("plant-card-editor"); }
@@ -20,7 +20,6 @@ class PlantCard extends HTMLElement {
         .title{font-size:1.4em;font-weight:bold;color:#4caf50}
         .opb-sub{font-size:11px;color:#81c784;opacity:.7;margin-top:2px}
         .bat{display:flex;align-items:center;gap:4px;font-size:.9em;font-weight:600;color:${batColor}}
-        .bat ha-icon{--mdc-icon-size:20px}
         .plant-img{display:block;width:120px;height:120px;object-fit:cover;margin:0 auto 20px;border-radius:50%;border:3px solid #4caf50;box-shadow:0 4px 10px rgba(0,0,0,.5)}
         .srow{margin-bottom:14px}
         .info{display:flex;align-items:center;font-size:14px;margin-bottom:6px}
@@ -61,59 +60,62 @@ class PlantCardEditor extends HTMLElement {
   async _opbSearch(query) {
     const status = this.querySelector("#opb-status");
     const results = this.querySelector("#opb-results");
-    status.textContent = "🔍 Interrogation de l'API...";
+    if (!query) return;
+    status.textContent = "🔍 Envoi de la requête...";
     results.innerHTML = "";
     
     try {
       await this._hass.callService("openplantbook", "search", { alias: query });
       
-      // On attend 3 secondes pour laisser le temps au cloud de répondre
-      await new Promise(r => setTimeout(r, 3000));
-      
-      let found = null;
-      const opbState = this._hass.states["openplantbook.search_result"];
-
-      if (opbState) {
-        const attr = opbState.attributes;
-        // SCAN TOUS LES ATTRIBUTS POSSIBLES
-        found = attr.results || attr.data || attr.plant_list || attr.items || attr.list;
+      // Tentatives répétées pour laisser le temps à HA de mettre à jour l'état
+      for (let i = 1; i <= 3; i++) {
+        status.textContent = `⏳ Attente des résultats (essai ${i}/3)...`;
+        await new Promise(r => setTimeout(r, 2000));
         
-        // SI PAS DANS LES ATTRIBUTS, REGARDER L'ETAT
-        if (!found && opbState.state && opbState.state !== "unknown" && opbState.state !== "none") {
-          try {
-            // Est-ce du JSON dans le texte ?
-            found = JSON.parse(opbState.state);
-          } catch(e) {
-            // Est-ce du texte avec des deux-points ?
-            const lines = opbState.state.split('\n');
-            if (lines.length > 0 && lines[0].includes(':')) {
-              found = lines.map(line => {
-                const parts = line.split(':');
-                return { pid: parts[0].trim(), display_pid: parts[1] ? parts[1].trim() : parts[0].trim() };
-              });
-            }
-          }
+        let found = this._getResultsFromState();
+        if (found && found.length > 0) {
+          this._displayResults(found);
+          return;
         }
       }
-
-      if (!found || (Array.isArray(found) && found.length === 0)) {
-        status.innerHTML = `<span style="color:red">❌ Données toujours vides.</span><br><small>Vérifiez que l'API OpenPlantBook n'est pas en erreur.</small>`;
-        return;
-      }
-      
-      const list = Array.isArray(found) ? found : Object.values(found);
-      status.textContent = "✅ " + list.length + " variétés trouvées :";
-      results.innerHTML = list.map(p => `
-        <div style="display:flex;justify-content:space-between;align-items:center;background:#fff;padding:10px;margin-bottom:8px;border-radius:8px;color:#333;border:1px solid #4caf50;box-shadow: 0 2px 4px rgba(0,0,0,0.1)">
-          <div style="font-size:11px"><b>${p.display_pid || p.pid}</b><br><small style="color:#666">${p.pid}</small></div>
-          <button style="background:#4caf50;color:white;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;font-weight:bold" onclick="this.closest('plant-card-editor')._opbLoadPlant('${p.pid}')">Utiliser</button>
-        </div>`).join("");
+      status.innerHTML = `<span style="color:red">❌ Aucun résultat.</span><br><small>Vérifiez vos identifiants OpenPlantBook dans HA.</small>`;
     } catch(e) { status.textContent = "Erreur : " + e.message; }
+  }
+
+  _getResultsFromState() {
+    const opbState = this._hass.states["openplantbook.search_result"];
+    if (!opbState) return null;
+    
+    // Test 1: JSON dans les attributs
+    let found = opbState.attributes.results || opbState.attributes.data || opbState.attributes.plant_list;
+    
+    // Test 2: Texte brut dans l'état principal
+    if (!found && opbState.state && opbState.state !== "unknown" && opbState.state !== "none") {
+      const lines = opbState.state.split('\n');
+      if (lines.length > 0 && lines[0].includes(':')) {
+        found = lines.map(line => {
+          const parts = line.split(':');
+          return { pid: parts[0].trim(), display_pid: parts[1] ? parts[1].trim() : parts[0].trim() };
+        });
+      }
+    }
+    return found;
+  }
+
+  _displayResults(list) {
+    const status = this.querySelector("#opb-status");
+    const results = this.querySelector("#opb-results");
+    status.textContent = `✅ ${list.length} plantes trouvées :`;
+    results.innerHTML = list.map(p => `
+      <div style="display:flex;justify-content:space-between;align-items:center;background:#fff;padding:10px;margin-bottom:8px;border-radius:8px;color:#333;border:1px solid #4caf50">
+        <div style="font-size:11px"><b>${p.display_pid || p.pid}</b><br><small>${p.pid}</small></div>
+        <button style="background:#4caf50;color:white;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;font-weight:bold" onclick="this.closest('plant-card-editor')._opbLoadPlant('${p.pid}')">Utiliser</button>
+      </div>`).join("");
   }
 
   async _opbLoadPlant(pid) {
     const status = this.querySelector("#opb-status");
-    status.textContent = "⌛ Importation des seuils...";
+    status.textContent = "📥 Chargement des seuils...";
     try {
       await this._hass.callService("openplantbook", "get_plant", { plant_pid: pid });
       await new Promise(r => setTimeout(r, 2000));
@@ -128,19 +130,17 @@ class PlantCardEditor extends HTMLElement {
         this._config.sensors.forEach(s => {
           const n = (s.name || "").toLowerCase();
           if (n.includes("humid") || n.includes("sol")) { 
-            s.warn_below = a.min_soil_moist; s.danger_above = a.max_soil_moist; s.max=100;
+            s.warn_below = a.min_soil_moist; s.danger_above = a.max_soil_moist; s.max=100; s.icon="mdi:water";
           }
           if (n.includes("temp")) { 
-            s.warn_below = a.min_temp; s.danger_above = a.max_temp; s.max=50;
+            s.warn_below = a.min_temp; s.danger_above = a.max_temp; s.max=50; s.icon="mdi:thermometer";
           }
         });
-        this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true }));
+        this._fire();
         status.textContent = "✅ " + pid + " appliqué !";
         this._render();
-      } else {
-        status.textContent = "❌ Détails introuvables pour " + pid;
       }
-    } catch(e) { status.textContent = "Erreur import : " + e.message; }
+    } catch(e) { status.textContent = "Erreur : " + e.message; }
   }
 
   _render() {
@@ -154,18 +154,18 @@ class PlantCardEditor extends HTMLElement {
       </style>
       <div class="edit-wrap">
         <div class="section" style="background:#e8f5e9; border: 2px solid #4caf50">
-          <label>🌿 OpenPlantBook</label>
-          <div style="display:flex;gap:5px"><input id="q" placeholder="Ex: spathiphyllum"><button id="sq" style="background:#4caf50;color:white;border:none;border-radius:5px;padding:0 15px;cursor:pointer;font-weight:bold">Chercher</button></div>
+          <label>🌿 Recherche OpenPlantBook</label>
+          <div style="display:flex;gap:5px"><input id="q" placeholder="Spathiphyllum"><button id="sq" style="background:#4caf50;color:white;border:none;border-radius:5px;padding:0 15px;cursor:pointer">Chercher</button></div>
           <div id="opb-status" style="font-size:11px;margin-top:8px;font-weight:bold;color:#1b5e20"></div>
           <div id="opb-results" style="max-height: 250px; overflow-y: auto; margin-top:5px"></div>
         </div>
         <div class="section">
           <label>Nom de la plante</label><input id="n" value="${this._config.name||""}">
           <label>URL Image</label><input id="img" value="${this._config.plant_image||""}">
-          <label>Entité Batterie</label><input id="bat" value="${this._config.battery_sensor||""}">
+          <label>Batterie</label><input id="bat" value="${this._config.battery_sensor||""}">
         </div>
         <div id="s-list"></div>
-        <button id="add" style="width:100%;padding:12px;background:#2196f3;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold">+ Ajouter un Capteur</button>
+        <button id="add" style="width:100%;padding:12px;background:#2196f3;color:white;border:none;border-radius:8px;font-weight:bold">+ Ajouter un Capteur</button>
       </div>`;
 
     this.querySelector("#sq").onclick = () => this._opbSearch(this.querySelector("#q").value);
@@ -181,14 +181,14 @@ class PlantCardEditor extends HTMLElement {
       d.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:12px">CAPTEUR ${i+1}</b><button class="del" style="color:#f44336;border:none;background:none;cursor:pointer;font-weight:bold">Supprimer</button></div>
         <label>Nom</label><input class="sn" value="${s.name}">
-        <label>Entité (sensor...)</label><input class="se" value="${s.entity}">
+        <label>Entité</label><input class="se" value="${s.entity}">
         <div style="display:flex;gap:5px">
           <div><label>Icône</label><input class="si" value="${s.icon}"></div>
           <div><label>Unité</label><input class="su" value="${s.unit}"></div>
         </div>
         <div style="display:flex;gap:5px">
-          <div><label>Min (💧)</label><input class="sw" type="number" value="${s.warn_below||""}"></div>
-          <div><label>Max (⚠️)</label><input class="sd" type="number" value="${s.danger_above||""}"></div>
+          <div><label>Min</label><input class="sw" type="number" value="${s.warn_below||""}"></div>
+          <div><label>Max</label><input class="sd" type="number" value="${s.danger_above||""}"></div>
         </div>`;
       
       d.querySelector(".sn").oninput = (e) => { this._config.sensors[i].name = e.target.value; this._fire(); };
