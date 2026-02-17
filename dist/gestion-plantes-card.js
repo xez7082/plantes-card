@@ -8,9 +8,11 @@ class PlantCard extends HTMLElement {
 
   static getStubConfig() {
     return {
-      name: "Fleur de Lune",
+      name: "Ma Nouvelle Plante",
       plant_image: "/local/fleurdelune.png",
-      custom_sensors: []
+      custom_sensors: [
+        { name: "Humidité", entity: "sensor.votre_capteur_moisture", unit: "%" }
+      ]
     };
   }
 
@@ -33,24 +35,23 @@ class PlantCard extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
-        .card { background: #222; border-radius: 16px; padding: 16px; color: white; font-family: sans-serif; }
-        .header { text-align: center; font-size: 20px; margin-bottom: 10px; font-weight: bold; }
-        .plant-img { display: block; width: 120px; margin: 0 auto 15px; border-radius: 10px; }
-        .sensor-row { margin-bottom: 10px; }
-        .label { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 3px; }
-        .bar-bg { background: #444; height: 8px; border-radius: 4px; overflow: hidden; }
-        .bar-fill { background: #4caf50; height: 100%; transition: width 0.5s; }
-        .unit { color: #aaa; margin-left: 4px; }
+        .card { background: rgba(20,20,20,0.8); border-radius: 20px; padding: 20px; color: white; font-family: sans-serif; border: 1px solid #444; }
+        .header { text-align: center; font-size: 22px; margin-bottom: 15px; letter-spacing: 1px; }
+        .plant-img { display: block; width: 150px; margin: 0 auto 20px; border-radius: 15px; filter: drop-shadow(0 5px 15px rgba(0,0,0,0.5)); }
+        .sensor-row { margin-bottom: 15px; }
+        .label { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 5px; }
+        .bar-bg { background: rgba(255,255,255,0.1); height: 10px; border-radius: 5px; overflow: hidden; }
+        .bar-fill { background: linear-gradient(90deg, #4caf50, #81c784); height: 100%; transition: width 1s ease-out; }
+        .unit { color: #888; font-size: 12px; margin-left: 3px; }
+        .val { font-weight: bold; color: #5ce1e6; }
       </style>
       <div class="card">
-        <div class="header">${c.name || "Ma Plante"}</div>
-        <img class="plant-img" src="${img}">
+        <div class="header">${c.name || "Plante"}</div>
+        <img class="plant-img" src="${img}" onerror="this.style.display='none'">
         
-        ${this._drawRow("💧 Humidité", getS(c.moisture_sensor), "%")}
-        ${this._drawRow("🌡️ Température", getS(c.temperature_sensor), "°C")}
-        ${this._drawRow("☀️ Lumière", getS(c.light_sensor), "lx")}
-        
-        ${(c.custom_sensors || []).map(s => this._drawRow(s.name, getS(s.entity), s.unit)).join('')}
+        <div id="sensors">
+          ${(c.custom_sensors || []).map(s => this._drawRow(s.name, getS(s.entity), s.unit)).join('')}
+        </div>
       </div>
     `;
   }
@@ -58,10 +59,11 @@ class PlantCard extends HTMLElement {
   _drawRow(label, val, unit) {
     if (val === "--" || val === "unknown") return "";
     const num = parseFloat(val) || 0;
-    const pct = Math.min(Math.max(num, 0), 100); // Simple % pour la barre
+    // On calcule un % arbitraire pour la barre (ici basé sur 100)
+    const pct = Math.min(Math.max(num, 0), 100); 
     return `
       <div class="sensor-row">
-        <div class="label"><span>${label}</span><span>${val}<span class="unit">${unit}</span></span></div>
+        <div class="label"><span>${label}</span><span><span class="val">${val}</span><span class="unit">${unit}</span></span></div>
         <div class="bar-bg"><div class="bar-fill" style="width: ${pct}%"></div></div>
       </div>
     `;
@@ -69,7 +71,7 @@ class PlantCard extends HTMLElement {
 }
 
 // ==========================================
-// EDITEUR SANS COMPOSANTS ÉTRANGERS
+// ÉDITEUR FLEXIBLE (SANS CAPTEURS FIGÉS)
 // ==========================================
 class PlantCardEditor extends HTMLElement {
   setConfig(config) {
@@ -82,59 +84,81 @@ class PlantCardEditor extends HTMLElement {
 
   _render() {
     this.innerHTML = `
-      <div style="padding: 10px; color: var(--primary-text-color);">
-        <label>Nom</label>
-        <input style="width:100%; margin-bottom:10px" id="name" value="${this._config.name || ""}">
-        
-        <label>Image (Chemin)</label>
-        <input style="width:100%; margin-bottom:10px" id="img" value="${this._config.plant_image || ""}">
+      <style>
+        .ed-card { padding: 12px; color: var(--primary-text-color); line-height: 1.6; }
+        .ed-row { margin-bottom: 15px; padding: 10px; background: var(--secondary-background-color); border-radius: 8px; }
+        label { display: block; font-weight: bold; font-size: 12px; text-transform: uppercase; color: var(--secondary-text-color); }
+        input { width: 100%; padding: 8px; box-sizing: border-box; border-radius: 4px; border: 1px solid #ccc; background: var(--card-background-color); color: var(--primary-text-color); }
+        .c-item { border: 1px solid #444; padding: 10px; margin-top: 10px; position: relative; border-radius: 6px; }
+        .btn-add { background: #4caf50; color: white; border: none; padding: 10px; width: 100%; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .btn-del { background: #f44336; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; margin-top: 8px; font-size: 10px; }
+        .flex { display: flex; gap: 5px; margin-top: 5px; }
+      </style>
+      <div class="ed-card">
+        <div class="ed-row">
+          <label>Nom de la plante</label>
+          <input id="name" value="${this._config.name || ""}">
+          <label style="margin-top:10px">URL Image</label>
+          <input id="img" value="${this._config.plant_image || ""}">
+        </div>
 
-        <hr>
-        <p><b>Capteurs (écrire l'id sensor.votre_capteur) :</b></p>
-        <input id="moist" placeholder="sensor.humidite" style="width:100%; margin-bottom:5px" value="${this._config.moisture_sensor || ""}">
-        <input id="temp" placeholder="sensor.temperature" style="width:100%; margin-bottom:5px" value="${this._config.temperature_sensor || ""}">
-        
-        <div id="custom-container">
+        <p><b>Liste de vos capteurs :</b></p>
+        <div id="custom-list">
           ${this._config.custom_sensors.map((s, i) => `
-            <div style="border: 1px solid #555; padding: 5px; margin-top: 5px;">
-              <input class="c-n" data-idx="${i}" placeholder="Nom" value="${s.name}" style="width:30%">
-              <input class="c-e" data-idx="${i}" placeholder="Entité" value="${s.entity}" style="width:40%">
-              <input class="c-u" data-idx="${i}" placeholder="Unité" value="${s.unit}" style="width:20%">
+            <div class="c-item">
+              <label>Titre (ex: Humidité)</label>
+              <input class="c-n" data-idx="${i}" value="${s.name}">
+              <div class="flex">
+                <div style="flex:2">
+                  <label>Entité (sensor.xxx)</label>
+                  <input class="c-e" data-idx="${i}" value="${s.entity}">
+                </div>
+                <div style="flex:1">
+                  <label>Unité</label>
+                  <input class="c-u" data-idx="${i}" value="${s.unit}">
+                </div>
+              </div>
+              <button class="btn-del" data-idx="${i}">Supprimer ce capteur</button>
             </div>
           `).join('')}
         </div>
-        <button id="add" style="margin-top:10px; width:100%; padding:10px; background: #4caf50; color: white; border: none; border-radius: 5px;">
-          + Ajouter un capteur
-        </button>
+        
+        <button id="add" class="btn-add" style="margin-top:15px">+ Ajouter un capteur</button>
       </div>
     `;
 
-    // Attacher les événements manuellement pour éviter les erreurs SSL/ShadowDOM
-    this.querySelector("#name").onchange = (e) => this._upd("name", e.target.value);
-    this.querySelector("#img").onchange = (e) => this._upd("plant_image", e.target.value);
-    this.querySelector("#moist").onchange = (e) => this._upd("moisture_sensor", e.target.value);
-    this.querySelector("#temp").onchange = (e) => this._upd("temperature_sensor", e.target.value);
+    this._attach();
+  }
+
+  _attach() {
+    this.querySelector("#name").onchange = (e) => this._save("name", e.target.value);
+    this.querySelector("#img").onchange = (e) => this._save("plant_image", e.target.value);
 
     this.querySelectorAll(".c-n").forEach(el => el.onchange = (e) => {
       this._config.custom_sensors[e.target.dataset.idx].name = e.target.value;
-      this._upd("custom_sensors", this._config.custom_sensors);
+      this._save("custom_sensors", this._config.custom_sensors);
     });
     this.querySelectorAll(".c-e").forEach(el => el.onchange = (e) => {
       this._config.custom_sensors[e.target.dataset.idx].entity = e.target.value;
-      this._upd("custom_sensors", this._config.custom_sensors);
+      this._save("custom_sensors", this._config.custom_sensors);
     });
     this.querySelectorAll(".c-u").forEach(el => el.onchange = (e) => {
       this._config.custom_sensors[e.target.dataset.idx].unit = e.target.value;
-      this._upd("custom_sensors", this._config.custom_sensors);
+      this._save("custom_sensors", this._config.custom_sensors);
     });
 
     this.querySelector("#add").onclick = () => {
-      this._config.custom_sensors.push({name: "", entity: "", unit: ""});
-      this._upd("custom_sensors", this._config.custom_sensors);
+      this._config.custom_sensors.push({name: "Nouveau", entity: "sensor.", unit: ""});
+      this._save("custom_sensors", this._config.custom_sensors);
     };
+
+    this.querySelectorAll(".btn-del").forEach(btn => btn.onclick = (e) => {
+      this._config.custom_sensors.splice(e.target.dataset.idx, 1);
+      this._save("custom_sensors", this._config.custom_sensors);
+    });
   }
 
-  _upd(key, val) {
+  _save(key, val) {
     this._config[key] = val;
     this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true }));
     this._render();
