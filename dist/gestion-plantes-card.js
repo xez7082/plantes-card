@@ -1,4 +1,4 @@
-// PLANT CARD PRO v3.1.2 - Édition Stable
+// PLANT CARD PRO v3.1.3 - Version Complète Fixée
 class PlantCard extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); }
 
@@ -72,8 +72,8 @@ class PlantCard extends HTMLElement {
                 <ha-icon icon="${s.icon || "mdi:sprout"}"></ha-icon>
                 <span class="lbl">${s.name || "Capteur"}</span>
                 <span class="val">${val}<span class="unit">${s.unit || ""}</span></span>
-                ${isDng ? `<span class="alert" title="Trop haut">⚠️</span>` : ""}
-                ${isWrn ? `<span class="alert" title="Trop bas">💧</span>` : ""}
+                ${isDng ? `<span class="alert">⚠️</span>` : ""}
+                ${isWrn ? `<span class="alert">💧</span>` : ""}
               </div>
               <div class="bar-bg"><div class="${barClass}" style="width:${isNaN(pct) ? 0 : pct}%"></div></div>
             </div>`;
@@ -111,22 +111,31 @@ class PlantCardEditor extends HTMLElement {
     const results = this.querySelector("#opb-results");
     if (!query) return;
     status.textContent = "Recherche...";
+    results.innerHTML = "";
     try {
       await this._hass.callService("openplantbook", "search", { alias: query });
       await new Promise(r => setTimeout(r, 2000));
+      
       let found = null;
       for (const eid in this._hass.states) {
         const s = this._hass.states[eid];
-        if (eid.includes("openplantbook") && s.attributes?.results) { found = s.attributes.results; break; }
+        const attr = s.attributes;
+        if (attr && (attr.results || attr.data || attr.plant_list)) {
+          if (eid.includes("openplantbook") || attr.friendly_name?.toLowerCase().includes("plant")) {
+            found = attr.results || attr.data || attr.plant_list;
+            break;
+          }
+        }
       }
+
       if (!found) { status.textContent = "Aucun résultat trouvé dans les états HA."; return; }
       
       const list = Array.isArray(found) ? found : Object.values(found);
-      status.textContent = "Résultats :";
+      status.textContent = "Plantes trouvées :";
       results.innerHTML = list.map(p => `
         <div class="opb-item" style="display:flex;justify-content:space-between;align-items:center;background:#fff;padding:8px;margin-bottom:5px;border-radius:5px;border:1px solid #ddd;color:#333">
           <div style="font-size:12px"><b>${p.display_pid || p.pid}</b><br>${p.pid}</div>
-          <button class="opb-btn" data-pid="${p.pid}" style="background:#4caf50;color:white;border:none;padding:5px;border-radius:4px;cursor:pointer">Utiliser</button>
+          <button class="opb-btn" data-pid="${p.pid}" style="background:#4caf50;color:white;border:none;padding:5px 10px;border-radius:4px;cursor:pointer">Utiliser</button>
         </div>`).join("");
 
       results.querySelectorAll(".opb-btn").forEach(btn => {
@@ -144,50 +153,55 @@ class PlantCardEditor extends HTMLElement {
         const a = plantState.attributes;
         this._config.opb_pid = pid;
         this._config.name = this._config.name || a.display_pid || pid;
-        // Mapping automatique simple
         this._config.sensors.forEach(s => {
           const n = (s.name || "").toLowerCase();
-          if (n.includes("humid") || n.includes("sol")) { s.warn_below = a.min_soil_moist; s.danger_above = a.max_soil_moist; }
-          if (n.includes("temp")) { s.warn_below = a.min_temp; s.danger_above = a.max_temp; }
+          if (n.includes("humid") || n.includes("sol")) { s.warn_below = a.min_soil_moist; s.danger_above = a.max_soil_moist; s.max = 100; s.icon = "mdi:water"; }
+          if (n.includes("temp")) { s.warn_below = a.min_temp; s.danger_above = a.max_temp; s.max = 50; s.icon = "mdi:thermometer"; }
+          if (n.includes("lum") || n.includes("lux")) { s.warn_below = a.min_light_lux; s.danger_above = a.max_light_lux; s.max = a.max_light_lux * 1.2; s.icon = "mdi:white-balance-sunny"; }
         });
         this._fire();
-        this.querySelector("#opb-status").textContent = "✓ Seuils appliqués pour " + pid;
+        this._build(); // Rafraîchir l'éditeur
       }
-    } catch(e) { alert("Erreur chargement: " + e.message); }
+    } catch(e) { alert("Erreur: " + e.message); }
   }
 
   _build() {
     this.innerHTML = `
       <style>
-        .section{background:#f8f9fa;padding:12px;border-radius:8px;margin-bottom:12px;color:#333}
-        .field{margin-bottom:10px}
-        label{display:block;font-size:12px;font-weight:bold}
-        input{width:100%;padding:8px;box-sizing:border-box;border:1px solid #ccc;border-radius:4px}
-        button{cursor:pointer;margin-top:5px}
-        .scard{border:1px solid #ddd;padding:10px;margin-bottom:10px;border-radius:5px;background:#fff}
+        .wrap{padding:10px;color:#333;font-family:sans-serif}
+        .section{background:#f4f4f4;padding:12px;border-radius:10px;margin-bottom:15px}
+        .field{margin-bottom:12px}
+        label{display:block;font-size:12px;font-weight:bold;margin-bottom:4px}
+        input{width:100%;padding:8px;box-sizing:border-box;border:1px solid #ccc;border-radius:5px}
+        button{cursor:pointer;font-weight:bold}
+        .scard{border:1px solid #ddd;padding:12px;margin-bottom:10px;border-radius:8px;background:#fff}
+        .btn-add{width:100%;padding:12px;background:#4caf50;color:white;border:none;border-radius:8px}
+        .btn-del{background:none;border:none;color:#f44336;font-size:12px;padding:0}
       </style>
-      <div class="section" style="background:#e8f5e9">
-        <label>Recherche OpenPlantBook</label>
-        <div style="display:flex;gap:5px"><input id="opb-query" placeholder="Spathiphyllum..."><button id="opb-btn">Chercher</button></div>
-        <div id="opb-status" style="font-size:11px;margin-top:5px"></div>
-        <div id="opb-results"></div>
-      </div>
-      <div class="section">
-        <label>Nom</label><input id="f-name" value="${this._config.name || ""}">
-        <label>Image</label><input id="f-img" value="${this._config.plant_image || ""}">
-        <label>Entité Batterie</label><input id="f-batt" value="${this._config.battery_sensor || ""}">
-      </div>
-      <div class="section">
-        <label>Capteurs</label>
-        <div id="sensor-list"></div>
-        <button id="add-s" style="width:100%;padding:10px;background:#4caf50;color:white;border:none;border-radius:5px">+ Ajouter Capteur</button>
+      <div class="wrap">
+        <div class="section" style="background:#e8f5e9;border:1px solid #c8e6c9">
+          <label>🌿 OpenPlantBook (HACS)</label>
+          <div style="display:flex;gap:5px"><input id="opb-query" placeholder="Ex: Spathiphyllum"><button id="opb-btn" style="padding:8px;background:#4caf50;color:white;border:none;border-radius:5px">Chercher</button></div>
+          <div id="opb-status" style="font-size:11px;margin-top:5px;color:#2e7d32"></div>
+          <div id="opb-results" style="margin-top:5px"></div>
+        </div>
+        <div class="section">
+          <div class="field"><label>Nom de la plante</label><input id="f-name" value="${this._config.name || ""}"></div>
+          <div class="field"><label>URL Image</label><input id="f-img" value="${this._config.plant_image || ""}"></div>
+          <div class="field"><label>Entité Batterie</label><input id="f-batt" value="${this._config.battery_sensor || ""}"></div>
+        </div>
+        <div class="section">
+          <label>Capteurs de données</label>
+          <div id="sensor-list"></div>
+          <button class="btn-add" id="add-s">+ Ajouter un capteur</button>
+        </div>
       </div>`;
 
     this.querySelector("#opb-btn").onclick = () => this._opbSearch(this.querySelector("#opb-query").value);
     this.querySelector("#f-name").oninput = (e) => { this._config.name = e.target.value; this._fire(); };
     this.querySelector("#f-img").oninput = (e) => { this._config.plant_image = e.target.value; this._fire(); };
     this.querySelector("#f-batt").oninput = (e) => { this._config.battery_sensor = e.target.value; this._fire(); };
-    this.querySelector("#add-s").onclick = () => { this._config.sensors.push({name:"Nouveau", entity:"", unit:"%"}); this._fire(); this._renderSensors(); };
+    this.querySelector("#add-s").onclick = () => { this._config.sensors.push({name:"Nouveau", entity:"", icon:"mdi:water", unit:"%"}); this._fire(); this._renderSensors(); };
     this._renderSensors();
   }
 
@@ -195,30 +209,43 @@ class PlantCardEditor extends HTMLElement {
     const list = this.querySelector("#sensor-list");
     list.innerHTML = this._config.sensors.map((s, i) => `
       <div class="scard">
-        <label>Nom</label><input class="sn" data-i="${i}" value="${s.name}">
-        <label>Entité</label><input class="se" data-i="${i}" value="${s.entity}">
-        <div style="display:flex;gap:5px">
-          <div><label>Min</label><input class="sw" data-i="${i}" type="number" value="${s.warn_below || ""}"></div>
-          <div><label>Max</label><input class="sd" data-i="${i}" type="number" value="${s.danger_above || ""}"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <b style="font-size:13px">Capteur ${i+1}</b>
+          <button class="btn-del" data-i="${i}">Supprimer</button>
         </div>
-        <button class="del-s" data-i="${i}" style="color:red;border:none;background:none;font-size:11px">Supprimer</button>
+        <div class="field"><label>Nom</label><input class="sn" data-i="${i}" value="${s.name || ""}"></div>
+        <div class="field"><label>Entité</label><input class="se" data-i="${i}" value="${s.entity || ""}"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="field"><label>Icône (mdi:...)</label><input class="si" data-i="${i}" value="${s.icon || "mdi:water"}"></div>
+          <div class="field"><label>Unité</label><input class="su" data-i="${i}" value="${s.unit || ""}"></div>
+          <div class="field"><label>Alerte si <</label><input class="sw" data-i="${i}" type="number" value="${s.warn_below || ""}"></div>
+          <div class="field"><label>Alerte si ></label><input class="sd" data-i="${i}" type="number" value="${s.danger_above || ""}"></div>
+        </div>
+        <div class="field"><label>Valeur Max barre (ex: 100)</label><input class="sm" data-i="${i}" type="number" value="${s.max || ""}"></div>
       </div>`).join("");
 
     list.querySelectorAll("input").forEach(input => {
       input.oninput = (e) => {
         const i = e.target.dataset.i;
-        if(e.target.classList.contains("sn")) this._config.sensors[i].name = e.target.value;
-        if(e.target.classList.contains("se")) this._config.sensors[i].entity = e.target.value;
-        if(e.target.classList.contains("sw")) this._config.sensors[i].warn_below = parseFloat(e.target.value);
-        if(e.target.classList.contains("sd")) this._config.sensors[i].danger_above = parseFloat(e.target.value);
+        const val = e.target.value;
+        if(e.target.classList.contains("sn")) this._config.sensors[i].name = val;
+        if(e.target.classList.contains("se")) this._config.sensors[i].entity = val;
+        if(e.target.classList.contains("si")) this._config.sensors[i].icon = val;
+        if(e.target.classList.contains("su")) this._config.sensors[i].unit = val;
+        if(e.target.classList.contains("sw")) this._config.sensors[i].warn_below = val === "" ? undefined : parseFloat(val);
+        if(e.target.classList.contains("sd")) this._config.sensors[i].danger_above = val === "" ? undefined : parseFloat(val);
+        if(e.target.classList.contains("sm")) this._config.sensors[i].max = val === "" ? undefined : parseFloat(val);
         this._fire();
       };
     });
-    list.querySelectorAll(".del-s").forEach(btn => btn.onclick = (e) => { this._config.sensors.splice(e.target.dataset.i, 1); this._fire(); this._renderSensors(); });
+    list.querySelectorAll(".btn-del").forEach(btn => btn.onclick = (e) => { 
+      this._config.sensors.splice(e.target.dataset.i, 1); 
+      this._fire(); this._renderSensors(); 
+    });
   }
 }
 
 customElements.define("plant-card", PlantCard);
 customElements.define("plant-card-editor", PlantCardEditor);
 window.customCards = window.customCards || [];
-window.customCards.push({ type: "plant-card", name: "Plant Card Pro" });
+window.customCards.push({ type: "plant-card", name: "Plant Card Pro", preview: true });
