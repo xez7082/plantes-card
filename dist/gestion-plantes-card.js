@@ -198,12 +198,13 @@ class PlantCardEditor extends HTMLElement {
 
     try {
       const res = await fetch(
-        `https://open.plantbook.io/api/v1/plant/search/?alias=${encodeURIComponent(query)}&limit=10`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        `https://open.plantbook.io/api/v1/plant/search/?plant_pid=${encodeURIComponent(query)}&limit=10`,
+        { headers: { Authorization: `Token ${token}` } }
       );
 
       if (!res.ok) {
-        if (res.status === 401) throw new Error("Token invalide ou expiré.");
+        if (res.status === 401 || res.status === 403) throw new Error("Token invalide ou expiré. Vérifiez sur open.plantbook.io");
+        if (res.status === 404) throw new Error("Plante introuvable. Essayez le nom scientifique en anglais (ex: monstera deliciosa).");
         throw new Error(`Erreur ${res.status}`);
       }
 
@@ -248,7 +249,7 @@ class PlantCardEditor extends HTMLElement {
     try {
       const res = await fetch(
         `https://open.plantbook.io/api/v1/plant/detail/${pid}/`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Token ${token}` } }
       );
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
       const p = await res.json();
@@ -379,14 +380,14 @@ class PlantCardEditor extends HTMLElement {
           <div class="opb-title">&#127807; OpenPlantBook</div>
           <div class="opb-help">
             Recherchez votre plante pour récupérer automatiquement les seuils recommandés (humidité, température, lumière…).<br>
-            Token gratuit sur <a href="https://open.plantbook.io" target="_blank">open.plantbook.io</a>
+            Token gratuit sur <a href="https://open.plantbook.io" target="_blank">open.plantbook.io</a><br><b>Astuce :</b> utilisez le nom scientifique en anglais pour de meilleurs résultats.
           </div>
           <div class="field"><label>Token API</label>
             <input class="ti" id="opb-token" type="password" placeholder="Votre token OpenPlantBook" value="${this._config.opb_token || ""}">
           </div>
           <div class="field"><label>Rechercher une plante</label>
             <div class="opb-row">
-              <input class="opb-input" id="opb-query" placeholder="ex: monstera, lavender, tomato…">
+              <input class="opb-input" id="opb-query" placeholder="ex: monstera deliciosa, lavandula, solanum lycopersicum…">
               <button class="opb-search-btn" id="opb-btn">&#128269; Chercher</button>
             </div>
           </div>
