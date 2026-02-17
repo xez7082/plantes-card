@@ -15,7 +15,7 @@ class PlantCard extends HTMLElement {
   }
 
   setConfig(config) { 
-    this._config = { ...config };
+    this._config = JSON.parse(JSON.stringify(config));
     if (!this._config.custom_sensors) this._config.custom_sensors = [];
     this._render(); 
   }
@@ -72,20 +72,27 @@ class PlantCard extends HTMLElement {
 }
 
 // ============================================================
-// ÉDITEUR RÉPARÉ
+// ÉDITEUR STABILISÉ
 // ============================================================
 class PlantCardEditor extends HTMLElement {
   setConfig(config) {
-    this._config = { custom_sensors: [], ...config };
+    this._config = JSON.parse(JSON.stringify(config));
+    if (!this._config.custom_sensors) this._config.custom_sensors = [];
     this._render();
   }
 
   set hass(hass) {
     this._hass = hass;
-    this.querySelectorAll("ha-entity-picker").forEach(p => { p.hass = hass; });
+    const pickers = this.querySelectorAll("ha-entity-picker");
+    pickers.forEach(p => { p.hass = hass; });
   }
 
   _render() {
+    if (this._rendered) {
+        this._updateValues();
+        return;
+    }
+
     this.innerHTML = `
       <style>
         .editor{padding:10px; font-family: sans-serif; color: var(--primary-text-color)}
@@ -93,101 +100,111 @@ class PlantCardEditor extends HTMLElement {
         label{display:block; font-weight:bold; font-size:12px; margin: 10px 0 5px}
         input, ha-entity-picker{display:block; width:100%; margin-bottom:10px}
         input{padding:10px; box-sizing:border-box; background: var(--card-background-color); color: var(--primary-text-color); border:1px solid var(--divider-color); border-radius:6px}
-        .btn{cursor:pointer; padding:10px; width:100%; border-radius:6px; border:none; font-weight:bold; transition: opacity 0.2s}
+        .btn{cursor:pointer; padding:10px; width:100%; border-radius:6px; border:none; font-weight:bold}
         .btn-add{background: #4caf50; color:white; margin-top:10px}
         .btn-del{background: #f44336; color:white; font-size:11px; padding:5px; margin-top:5px}
-        .cust-row{border-left: 4px solid #4caf50; padding: 10px; margin-bottom:15px; background: rgba(0,0,0,0.05); border-radius: 0 8px 8px 0}
+        .cust-row{border-left: 4px solid #4caf50; padding: 10px; margin-bottom:15px; background: rgba(0,0,0,0.05)}
       </style>
       <div class="editor">
         <div class="sect">
           <label>Infos Générales</label>
-          <input data-key="name" placeholder="Nom de la plante" value="${this._config.name || ""}">
-          <input data-key="plant_image" placeholder="URL Image Plante" value="${this._config.plant_image || ""}">
+          <input id="in-name" placeholder="Nom de la plante">
+          <input id="in-plant-image" placeholder="URL Image Plante">
           <label>Batterie</label>
-          <ha-entity-picker data-key="battery_sensor" .value="${this._config.battery_sensor}" .hass="${this._hass}" allow-custom-entity></ha-entity-picker>
+          <ha-entity-picker id="p-battery" allow-custom-entity></ha-entity-picker>
         </div>
 
         <div class="sect">
           <label>Capteurs Standards</label>
-          <ha-entity-picker label="Humidité" data-key="moisture_sensor" .value="${this._config.moisture_sensor}" .hass="${this._hass}"></ha-entity-picker>
-          <ha-entity-picker label="Température" data-key="temperature_sensor" .value="${this._config.temperature_sensor}" .hass="${this._hass}"></ha-entity-picker>
-          <ha-entity-picker label="Lumière" data-key="light_sensor" .value="${this._config.light_sensor}" .hass="${this._hass}"></ha-entity-picker>
+          <ha-entity-picker id="p-moisture" label="Humidité"></ha-entity-picker>
+          <ha-entity-picker id="p-temp" label="Température"></ha-entity-picker>
+          <ha-entity-picker id="p-light" label="Lumière"></ha-entity-picker>
         </div>
 
         <div class="sect">
           <label>Capteurs Supplémentaires</label>
-          <div id="custom-list">
-            ${(this._config.custom_sensors || []).map((s, i) => `
-              <div class="cust-row">
-                <input class="cust-input" data-idx="${i}" data-field="name" placeholder="Titre (ex: PH du sol)" value="${s.name || ""}">
-                <ha-entity-picker class="cust-picker" data-idx="${i}" .value="${s.entity}" .hass="${this._hass}"></ha-entity-picker>
-                <input class="cust-input" data-idx="${i}" data-field="unit" placeholder="Unité (ex: %)" value="${s.unit || ""}">
-                <button class="btn btn-del" data-idx="${i}">Supprimer</button>
-              </div>
-            `).join('')}
-          </div>
+          <div id="custom-list"></div>
           <button class="btn btn-add" id="add-btn">+ Ajouter un capteur</button>
         </div>
       </div>`;
 
+    this._rendered = true;
+    this._updateValues();
+    this._attachEvents();
+  }
+
+  _updateValues() {
+    this.querySelector("#in-name").value = this._config.name || "";
+    this.querySelector("#in-plant-image").value = this._config.plant_image || "";
+    this.querySelector("#p-battery").value = this._config.battery_sensor || "";
+    this.querySelector("#p-moisture").value = this._config.moisture_sensor || "";
+    this.querySelector("#p-temp").value = this._config.temperature_sensor || "";
+    this.querySelector("#p-light").value = this._config.light_sensor || "";
+    this.querySelector("#p-battery").hass = this._hass;
+    this.querySelector("#p-moisture").hass = this._hass;
+    this.querySelector("#p-temp").hass = this._hass;
+    this.querySelector("#p-light").hass = this._hass;
+
+    const list = this.querySelector("#custom-list");
+    list.innerHTML = "";
+    this._config.custom_sensors.forEach((s, i) => {
+        const div = document.createElement("div");
+        div.className = "cust-row";
+        div.innerHTML = `
+            <input class="cust-n" data-idx="${i}" placeholder="Titre (ex: PH)" value="${s.name || ""}">
+            <ha-entity-picker class="cust-p" data-idx="${i}" value="${s.entity || ""}"></ha-entity-picker>
+            <input class="cust-u" data-idx="${i}" placeholder="Unité" value="${s.unit || ""}">
+            <button class="btn btn-del" data-idx="${i}">Supprimer</button>
+        `;
+        list.appendChild(div);
+        div.querySelector("ha-entity-picker").hass = this._hass;
+    });
     this._attachEvents();
   }
 
   _attachEvents() {
-    // Inputs classiques
-    this.querySelectorAll("input[data-key]").forEach(input => {
-      input.onchange = (e) => this._fire({ [e.target.dataset.key]: e.target.value });
-    });
-
-    // Pickers classiques
-    this.querySelectorAll("ha-entity-picker[data-key]").forEach(picker => {
-      picker.addEventListener("value-changed", (e) => {
-        this._fire({ [e.target.dataset.key]: e.detail.value });
-      });
-    });
-
-    // Inputs et Pickers de la liste dynamique
-    this.querySelectorAll(".cust-input").forEach(input => {
-      input.onchange = (e) => {
-        const sensors = [...this._config.custom_sensors];
-        sensors[e.target.dataset.idx][e.target.dataset.field] = e.target.value;
-        this._fire({ custom_sensors: sensors });
-      };
-    });
-
-    this.querySelectorAll(".cust-picker").forEach(picker => {
-      picker.addEventListener("value-changed", (e) => {
-        if (!e.detail.value) return;
-        const sensors = [...this._config.custom_sensors];
-        sensors[picker.dataset.idx].entity = e.detail.value;
-        this._fire({ custom_sensors: sensors });
-      });
-    });
-
-    // Boutons
-    this.querySelector("#add-btn").onclick = () => {
-      const sensors = [...(this._config.custom_sensors || []), { name: "", entity: "", unit: "" }];
-      this._fire({ custom_sensors: sensors });
+    const fire = (key, val) => {
+        this._config[key] = val;
+        this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true }));
     };
 
-    this.querySelectorAll(".btn-del").forEach(btn => {
-      btn.onclick = (e) => {
-        const sensors = [...this._config.custom_sensors];
-        sensors.splice(e.target.dataset.idx, 1);
-        this._fire({ custom_sensors: sensors });
-      };
+    this.querySelector("#in-name").onchange = (e) => fire("name", e.target.value);
+    this.querySelector("#in-plant-image").onchange = (e) => fire("plant_image", e.target.value);
+    
+    ["#p-battery", "#p-moisture", "#p-temp", "#p-light"].forEach(id => {
+        const el = this.querySelector(id);
+        const key = id === "#p-battery" ? "battery_sensor" : 
+                    id === "#p-moisture" ? "moisture_sensor" :
+                    id === "#p-temp" ? "temperature_sensor" : "light_sensor";
+        el.addEventListener("value-changed", (e) => fire(key, e.detail.value));
     });
-  }
 
-  _fire(change) {
-    this._config = { ...this._config, ...change };
-    this.dispatchEvent(new CustomEvent("config-changed", { 
-      detail: { config: this._config }, 
-      bubbles: true, 
-      composed: true 
+    this.querySelectorAll(".cust-n").forEach(el => el.onchange = (e) => {
+        this._config.custom_sensors[e.target.dataset.idx].name = e.target.value;
+        fire("custom_sensors", this._config.custom_sensors);
+    });
+
+    this.querySelectorAll(".cust-p").forEach(el => el.addEventListener("value-changed", (e) => {
+        this._config.custom_sensors[el.dataset.idx].entity = e.detail.value;
+        fire("custom_sensors", this._config.custom_sensors);
     }));
-    // On attend un tout petit peu pour que HA traite le changement avant de redessiner
-    setTimeout(() => this._render(), 50);
+
+    this.querySelectorAll(".cust-u").forEach(el => el.onchange = (e) => {
+        this._config.custom_sensors[e.target.dataset.idx].unit = e.target.value;
+        fire("custom_sensors", this._config.custom_sensors);
+    });
+
+    this.querySelector("#add-btn").onclick = () => {
+        this._config.custom_sensors.push({name: "", entity: "", unit: ""});
+        fire("custom_sensors", this._config.custom_sensors);
+        this._rendered = false; this._render();
+    };
+
+    this.querySelectorAll(".btn-del").forEach(btn => btn.onclick = (e) => {
+        this._config.custom_sensors.splice(e.target.dataset.idx, 1);
+        fire("custom_sensors", this._config.custom_sensors);
+        this._rendered = false; this._render();
+    });
   }
 }
 
