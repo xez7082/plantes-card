@@ -214,15 +214,21 @@ class PlantCardEditor extends HTMLElement {
   constructor() {
     super();
     this._config = {};
+    this._hass = null;
   }
 
+  // Quand hass change, on injecte dans les ha-entity-picker déjà présents
   set hass(hass) {
     this._hass = hass;
+    // Injecter hass dans tous les pickers déjà dans le DOM sans re-render
+    this.querySelectorAll("ha-entity-picker").forEach(picker => {
+      picker.hass = hass;
+    });
   }
 
   setConfig(config) {
     this._config = { ...config };
-    this.render();
+    this.render(); // render une seule fois à l'init
   }
 
   configChanged() {
@@ -233,17 +239,69 @@ class PlantCardEditor extends HTMLElement {
     }));
   }
 
-  field(label, key, placeholder = "") {
+  // Champ texte simple — NE PAS re-render, juste sauvegarder
+  _bindInputs() {
+    this.querySelectorAll("input[data-key]").forEach(input => {
+      input.addEventListener("change", (e) => {
+        this._config[e.target.dataset.key] = e.target.value;
+        this.configChanged();
+      });
+      // "change" se déclenche quand on quitte le champ → pas de saut
+      // Si vous voulez la sauvegarde en direct sans saut, on utilise
+      // un debounce plutôt que oninput
+      input.addEventListener("input", (e) => {
+        clearTimeout(input._timer);
+        input._timer = setTimeout(() => {
+          this._config[e.target.dataset.key] = e.target.value;
+          this.configChanged();
+        }, 500); // attend 500ms après la dernière frappe
+      });
+    });
+  }
+
+  // Pickers d'entités — utilise ha-entity-picker natif de HA
+  _bindPickers() {
+    this.querySelectorAll("ha-entity-picker[data-key]").forEach(picker => {
+      picker.hass = this._hass;
+      picker.addEventListener("value-changed", (e) => {
+        this._config[picker.dataset.key] = e.detail.value;
+        this.configChanged();
+        // PAS de render() ici → pas de saut !
+      });
+    });
+  }
+
+  _textField(label, key, placeholder = "") {
     const val = this._config[key] || "";
     return `
       <div style="margin-bottom:12px;">
-        <label style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:#555;">${label}</label>
-        <input 
-          data-key="${key}" 
-          value="${val}" 
+        <label style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:#555;">
+          ${label}
+        </label>
+        <input
+          data-key="${key}"
+          value="${val}"
           placeholder="${placeholder}"
-          style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;box-sizing:border-box;"
+          style="width:100%;padding:8px 12px;border:1px solid #ddd;
+                 border-radius:6px;font-size:14px;box-sizing:border-box;"
         />
+      </div>
+    `;
+  }
+
+  _pickerField(label, key) {
+    const val = this._config[key] || "";
+    return `
+      <div style="margin-bottom:12px;">
+        <label style="display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:#555;">
+          ${label}
+        </label>
+        <ha-entity-picker
+          data-key="${key}"
+          value="${val}"
+          allow-custom-entity
+          style="display:block;"
+        ></ha-entity-picker>
       </div>
     `;
   }
@@ -282,33 +340,30 @@ class PlantCardEditor extends HTMLElement {
 
         <div class="section">
           <div class="section-title">🌿 Informations</div>
-          ${this.field("Nom de la plante", "name", "Ma plante")}
-          ${this.field("Sous-titre / variété", "subtitle", "Monstera Deliciosa")}
+          ${this._textField("Nom de la plante", "name", "Ma plante")}
+          ${this._textField("Sous-titre / variété", "subtitle", "Monstera Deliciosa")}
         </div>
 
         <div class="section">
           <div class="section-title">🖼️ Images</div>
-          ${this.field("Image de fond (URL)", "image", "/local/plants/fond.jpg")}
-          ${this.field("Image de la plante (URL)", "plant_image", "/local/plants/plante.png")}
+          ${this._textField("Image de fond (URL)", "image", "/local/plants/fond.jpg")}
+          ${this._textField("Image de la plante (URL)", "plant_image", "/local/plants/plante.png")}
         </div>
 
         <div class="section">
           <div class="section-title">📡 Capteurs</div>
-          ${this.field("💧 Humidité (entity_id)", "moisture_sensor", "sensor.plante_moisture")}
-          ${this.field("🌿 Engrais / Conductivité (entity_id)", "conductivity_sensor", "sensor.plante_conductivity")}
-          ${this.field("☀️ Lumière (entity_id)", "light_sensor", "sensor.plante_illuminance")}
-          ${this.field("🌡 Température (entity_id)", "temperature_sensor", "sensor.plante_temperature")}
-          ${this.field("🔋 Batterie (entity_id)", "battery_sensor", "sensor.plante_battery")}
+          ${this._pickerField("💧 Humidité", "moisture_sensor")}
+          ${this._pickerField("🌿 Engrais / Conductivité", "conductivity_sensor")}
+          ${this._pickerField("☀️ Lumière", "light_sensor")}
+          ${this._pickerField("🌡 Température", "temperature_sensor")}
+          ${this._pickerField("🔋 Batterie", "battery_sensor")}
         </div>
       </div>
     `;
 
-    this.querySelectorAll("input[data-key]").forEach(input => {
-      input.addEventListener("input", (e) => {
-        this._config[e.target.dataset.key] = e.target.value;
-        this.configChanged();
-      });
-    });
+    // Lier les événements UNE SEULE FOIS après le render
+    this._bindInputs();
+    this._bindPickers();
   }
 }
 
