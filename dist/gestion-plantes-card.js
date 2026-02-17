@@ -71,92 +71,93 @@ class PlantCard extends HTMLElement {
   }
 }
 
-// ==========================================
-// ÉDITEUR ROBUSTE (SANS COMPOSANTS FRAGILES)
-// ==========================================
 class PlantCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = JSON.parse(JSON.stringify(config));
     this._render();
   }
 
-  set hass(hass) { this._hass = hass; }
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
 
   _render() {
+    if (!this._hass) return;
+    
     this.innerHTML = `
-      <style>
-        .ed-container { padding: 10px; font-family: sans-serif; }
-        .field { margin-bottom: 15px; }
-        label { display: block; font-size: 12px; margin-bottom: 5px; color: var(--secondary-text-color); }
-        input { width: 100%; padding: 10px; box-sizing: border-box; border-radius: 4px; border: 1px solid #444; background: var(--card-background-color); color: var(--primary-text-color); }
-        .sensor-block { border: 1px solid #444; padding: 15px; border-radius: 8px; margin-bottom: 15px; background: rgba(0,0,0,0.2); }
-        .btn { padding: 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        .btn-add { background: #4caf50; color: white; width: 100%; }
-        .btn-del { background: #f44336; color: white; margin-top: 10px; }
-        .grid { display: flex; gap: 10px; margin-top: 10px; }
-      </style>
-      <div class="ed-container">
-        <div class="field">
-          <label>Nom de la plante</label>
-          <input id="name" value="${this._config.name || ""}">
-        </div>
-        <div class="field">
-          <label>Image URL</label>
-          <input id="img" value="${this._config.plant_image || ""}">
-        </div>
-        <div class="field">
-          <label>Entité Batterie (ex: sensor.plant_batt)</label>
-          <input id="batt" value="${this._config.battery_sensor || ""}">
-        </div>
+      <div style="padding: 10px;">
+        <ha-textfield label="Nom de la plante" id="name" .value="${this._config.name || ""}" style="width:100%; margin-bottom:15px;"></ha-textfield>
+        <ha-textfield label="URL Image" id="img" .value="${this._config.plant_image || ""}" style="width:100%; margin-bottom:15px;"></ha-textfield>
+        
+        <label style="display:block; font-size:12px; margin-bottom:5px;">Capteur Batterie</label>
+        <ha-entity-picker .hass="${this._hass}" .value="${this._config.battery_sensor}" .includeDomains='["sensor"]' id="batt" style="margin-bottom:15px;"></ha-entity-picker>
 
         <hr>
-        <p><b>Capteurs</b></p>
-        <div id="s-list">
+        <strong>Capteurs</strong>
+        <div id="s-list" style="margin-top:10px;">
           ${(this._config.sensors || []).map((s, i) => `
-            <div class="sensor-block">
-              <label>Nom du capteur</label>
-              <input class="n" data-i="${i}" value="${s.name}">
-              <label style="margin-top:10px">Entité (Copier/Coller l'ID)</label>
-              <input class="e" data-i="${i}" value="${s.entity}">
-              <div class="grid">
-                <div style="flex:1"><label>Icône</label><input class="ic" data-i="${i}" value="${s.icon || ""}"></div>
-                <div style="flex:1"><label>Unité</label><input class="u" data-i="${i}" value="${s.unit || ""}"></div>
+            <div style="border: 1px solid #444; padding: 10px; margin-bottom: 10px; border-radius: 8px; background: rgba(255,255,255,0.05);">
+              <ha-textfield label="Titre" class="n" data-i="${i}" .value="${s.name}" style="width:100%; margin-bottom:10px;"></ha-textfield>
+              <label style="display:block; font-size:12px; margin-bottom:5px;">Entité</label>
+              <ha-entity-picker .hass="${this._hass}" .value="${s.entity}" class="e" data-i="${i}" .includeDomains='["sensor"]' style="margin-bottom:10px;"></ha-entity-picker>
+              <div style="display:flex; gap:10px;">
+                <ha-textfield label="Icône" class="ic" data-i="${i}" .value="${s.icon || 'mdi:water'}" style="flex:1;"></ha-textfield>
+                <ha-textfield label="Unité" class="u" data-i="${i}" .value="${s.unit || '%'}" style="flex:1;"></ha-textfield>
               </div>
-              <button class="btn btn-del" data-i="${i}">Supprimer</button>
+              <ha-button class="del" data-i="${i}" style="--mdc-theme-primary: red;">Supprimer</ha-button>
             </div>
           `).join('')}
         </div>
-        <button id="add" class="btn btn-add">+ Ajouter un capteur</button>
+        <ha-button raised id="add" style="width:100%; --mdc-theme-primary: #4caf50;">+ Ajouter un capteur</ha-button>
       </div>
     `;
 
-    this._attach();
+    this._setupEvents();
   }
 
-  _attach() {
-    const save = () => {
-      this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true }));
+  _setupEvents() {
+    const fire = () => {
+      this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config } }));
     };
 
-    this.querySelector("#name").onchange = (e) => { this._config.name = e.target.value; save(); };
-    this.querySelector("#img").onchange = (e) => { this._config.plant_image = e.target.value; save(); };
-    this.querySelector("#batt").onchange = (e) => { this._config.battery_sensor = e.target.value; save(); };
+    this.querySelector("#name").addEventListener("input", (e) => { this._config.name = e.target.value; fire(); });
+    this.querySelector("#img").addEventListener("input", (e) => { this._config.plant_image = e.target.value; fire(); });
+    
+    this.querySelector("#batt").addEventListener("value-changed", (e) => {
+      this._config.battery_sensor = e.detail.value;
+      fire();
+    });
 
-    this.querySelectorAll(".n").forEach(el => el.onchange = (e) => { this._config.sensors[e.target.dataset.i].name = e.target.value; save(); });
-    this.querySelectorAll(".e").forEach(el => el.onchange = (e) => { this._config.sensors[e.target.dataset.i].entity = e.target.value; save(); });
-    this.querySelectorAll(".ic").forEach(el => el.onchange = (e) => { this._config.sensors[e.target.dataset.i].icon = e.target.value; save(); });
-    this.querySelectorAll(".u").forEach(el => el.onchange = (e) => { this._config.sensors[e.target.dataset.i].unit = e.target.value; save(); });
+    this.querySelectorAll(".n").forEach(el => el.addEventListener("input", (e) => {
+      this._config.sensors[el.dataset.i].name = e.target.value;
+      fire();
+    }));
+
+    this.querySelectorAll(".e").forEach(el => el.addEventListener("value-changed", (e) => {
+      this._config.sensors[el.dataset.i].entity = e.detail.value;
+      fire();
+    }));
+
+    this.querySelectorAll(".ic").forEach(el => el.addEventListener("input", (e) => {
+      this._config.sensors[el.dataset.i].icon = e.target.value;
+      fire();
+    }));
+
+    this.querySelectorAll(".u").forEach(el => el.addEventListener("input", (e) => {
+      this._config.sensors[el.dataset.i].unit = e.target.value;
+      fire();
+    }));
 
     this.querySelector("#add").onclick = () => {
-      if (!this._config.sensors) this._config.sensors = [];
       this._config.sensors.push({name: "Nouveau", entity: "", icon: "mdi:water", unit: "%"});
-      save();
+      fire();
       this._render();
     };
 
-    this.querySelectorAll(".btn-del").forEach(el => el.onclick = (e) => {
-      this._config.sensors.splice(e.target.dataset.i, 1);
-      save();
+    this.querySelectorAll(".del").forEach(el => el.onclick = () => {
+      this._config.sensors.splice(el.dataset.i, 1);
+      fire();
       this._render();
     });
   }
@@ -164,6 +165,5 @@ class PlantCardEditor extends HTMLElement {
 
 customElements.define("plant-card", PlantCard);
 customElements.define("plant-card-editor", PlantCardEditor);
-
 window.customCards = window.customCards || [];
 window.customCards.push({ type: "plant-card", name: "Plant Card Pro", preview: true });
