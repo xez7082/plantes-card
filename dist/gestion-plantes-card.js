@@ -26,32 +26,33 @@ class PlantCard extends HTMLElement {
     if (!this._config || !this._hass) return;
     const c = this._config;
     const getS = (eid) => this._hass.states[eid]?.state || "--";
+    
+    // Correction du chemin d'image dynamique
     const imgPlante = c.plant_image || "/local/community/plantes-card/fleurdelune.png";
     const battery = c.battery_sensor ? getS(c.battery_sensor) : null;
 
     this.shadowRoot.innerHTML = `
       <style>
-        .bg{position:relative;border-radius:24px;overflow:hidden;color:white;font-family:sans-serif;background:#222}
-        .bg-img{width:100%;height:100%;object-fit:cover;filter:blur(8px) brightness(.5);position:absolute;inset:0}
-        .card{position:relative;padding:20px;backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.2);background:rgba(0,0,0,0.3);border-radius:24px}
+        .bg{position:relative;border-radius:24px;overflow:hidden;color:white;font-family:sans-serif;background:#1a1a1a;min-height:200px}
+        .card{position:relative;padding:20px;background:rgba(0,0,0,0.4);backdrop-filter:blur(8px);border-radius:24px;border:1px solid rgba(255,255,255,0.1)}
         .header{display:flex;justify-content:center;align-items:center;gap:10px;margin-bottom:15px}
-        h1{margin:0;font-size:22px;text-align:center}
+        h1{margin:0;font-size:22px;text-shadow: 0 2px 4px rgba(0,0,0,0.5)}
         .batt{font-size:12px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:10px}
-        .plant-img{display:block;margin:0 auto 15px;max-height:160px;filter:drop-shadow(0 8px 8px rgba(0,0,0,0.5))}
+        .plant-img{display:block;margin:0 auto 15px;max-height:180px;object-fit:contain;filter:drop-shadow(0 10px 10px rgba(0,0,0,0.6))}
         .row{margin:12px 0}
         .lbl{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px}
         .val{color:#5ce1e6;font-weight:bold}
-        .bar{height:6px;background:rgba(255,255,255,.2);border-radius:10px;overflow:hidden}
-        .fill{height:100%;background:linear-gradient(90deg,#4fd1c5,#63b3ed);transition:width .5s}
+        .bar{height:8px;background:rgba(255,255,255,0.1);border-radius:10px;overflow:hidden}
+        .fill{height:100%;background:linear-gradient(90deg,#4fd1c5,#63b3ed);transition:width 0.8s ease-in-out}
       </style>
       <div class="bg">
-        ${c.image ? `<img class="bg-img" src="${c.image}">` : ""}
         <div class="card">
           <div class="header">
             <h1>${c.name || "Ma Plante"}</h1>
             ${battery && battery !== "unknown" ? `<span class="batt">🔋 ${battery}%</span>` : ""}
           </div>
-          <img class="plant-img" src="${imgPlante}">
+          <img class="plant-img" src="${imgPlante}" onerror="this.style.display='none'">
+          
           ${this._row("💧 Humidité", getS(c.moisture_sensor), "%", 100)}
           ${this._row("🌡️ Température", getS(c.temperature_sensor), "°C", 45)}
           ${this._row("☀️ Lumière", getS(c.light_sensor), " lx", 10000)}
@@ -72,7 +73,7 @@ class PlantCard extends HTMLElement {
 }
 
 // ============================================================
-// ÉDITEUR STABILISÉ
+// ÉDITEUR ROBUSTE (SANS DEPENDANCE)
 // ============================================================
 class PlantCardEditor extends HTMLElement {
   setConfig(config) {
@@ -83,128 +84,93 @@ class PlantCardEditor extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    const pickers = this.querySelectorAll("ha-entity-picker");
-    pickers.forEach(p => { p.hass = hass; });
+    this.querySelectorAll("ha-entity-picker").forEach(p => { p.hass = hass; });
   }
 
   _render() {
-    if (this._rendered) {
-        this._updateValues();
-        return;
-    }
-
     this.innerHTML = `
       <style>
-        .editor{padding:10px; font-family: sans-serif; color: var(--primary-text-color)}
-        .sect{background: var(--secondary-background-color); padding:12px; margin-bottom:10px; border-radius:8px; border: 1px solid var(--divider-color)}
-        label{display:block; font-weight:bold; font-size:12px; margin: 10px 0 5px}
-        input, ha-entity-picker{display:block; width:100%; margin-bottom:10px}
+        .editor-container{padding:15px; font-family: system-ui; color: var(--primary-text-color)}
+        .box{background: var(--secondary-background-color); padding:15px; margin-bottom:15px; border-radius:10px; border: 1px solid var(--divider-color)}
+        label{display:block; font-weight:bold; font-size:13px; margin-bottom:8px; color: var(--secondary-text-color)}
+        input, ha-entity-picker{display:block; width:100%; margin-bottom:12px}
         input{padding:10px; box-sizing:border-box; background: var(--card-background-color); color: var(--primary-text-color); border:1px solid var(--divider-color); border-radius:6px}
-        .btn{cursor:pointer; padding:10px; width:100%; border-radius:6px; border:none; font-weight:bold}
-        .btn-add{background: #4caf50; color:white; margin-top:10px}
-        .btn-del{background: #f44336; color:white; font-size:11px; padding:5px; margin-top:5px}
-        .cust-row{border-left: 4px solid #4caf50; padding: 10px; margin-bottom:15px; background: rgba(0,0,0,0.05)}
+        .btn{cursor:pointer; padding:12px; width:100%; border-radius:8px; border:none; font-weight:bold; transition: background 0.3s}
+        .btn-add{background: #2e7d32; color:white; margin-top:10px}
+        .btn-del{background: #c62828; color:white; font-size:11px; padding:6px; margin-top:5px}
+        .custom-item{border-left: 4px solid #2e7d32; padding: 10px; margin-bottom:15px; background: rgba(0,0,0,0.03)}
       </style>
-      <div class="editor">
-        <div class="sect">
-          <label>Infos Générales</label>
-          <input id="in-name" placeholder="Nom de la plante">
-          <input id="in-plant-image" placeholder="URL Image Plante">
+      <div class="editor-container">
+        <div class="box">
+          <label>Configuration Générale</label>
+          <input data-key="name" placeholder="Nom de la plante" value="${this._config.name || ""}">
+          <input data-key="plant_image" placeholder="Chemin image (ex: /local/fleur.png)" value="${this._config.plant_image || ""}">
           <label>Batterie</label>
-          <ha-entity-picker id="p-battery" allow-custom-entity></ha-entity-picker>
+          <ha-entity-picker data-key="battery_sensor" .value="${this._config.battery_sensor}" .hass="${this._hass}"></ha-entity-picker>
         </div>
 
-        <div class="sect">
-          <label>Capteurs Standards</label>
-          <ha-entity-picker id="p-moisture" label="Humidité"></ha-entity-picker>
-          <ha-entity-picker id="p-temp" label="Température"></ha-entity-picker>
-          <ha-entity-picker id="p-light" label="Lumière"></ha-entity-picker>
+        <div class="box">
+          <label>Capteurs de base</label>
+          <ha-entity-picker label="Humidité" data-key="moisture_sensor" .value="${this._config.moisture_sensor}" .hass="${this._hass}"></ha-entity-picker>
+          <ha-entity-picker label="Température" data-key="temperature_sensor" .value="${this._config.temperature_sensor}" .hass="${this._hass}"></ha-entity-picker>
+          <ha-entity-picker label="Lumière" data-key="light_sensor" .value="${this._config.light_sensor}" .hass="${this._hass}"></ha-entity-picker>
         </div>
 
-        <div class="sect">
-          <label>Capteurs Supplémentaires</label>
-          <div id="custom-list"></div>
+        <div class="box">
+          <label>Capteurs Additionnels</label>
+          <div id="custom-zone">
+            ${this._config.custom_sensors.map((s, i) => `
+              <div class="custom-item">
+                <input class="c-name" data-idx="${i}" placeholder="Titre" value="${s.name || ""}">
+                <ha-entity-picker class="c-entity" data-idx="${i}" .value="${s.entity}" .hass="${this._hass}"></ha-entity-picker>
+                <input class="c-unit" data-idx="${i}" placeholder="Unité" value="${s.unit || ""}">
+                <button class="btn btn-del" data-idx="${i}">Supprimer</button>
+              </div>
+            `).join('')}
+          </div>
           <button class="btn btn-add" id="add-btn">+ Ajouter un capteur</button>
         </div>
       </div>`;
 
-    this._rendered = true;
-    this._updateValues();
-    this._attachEvents();
+    this._setupEvents();
   }
 
-  _updateValues() {
-    this.querySelector("#in-name").value = this._config.name || "";
-    this.querySelector("#in-plant-image").value = this._config.plant_image || "";
-    this.querySelector("#p-battery").value = this._config.battery_sensor || "";
-    this.querySelector("#p-moisture").value = this._config.moisture_sensor || "";
-    this.querySelector("#p-temp").value = this._config.temperature_sensor || "";
-    this.querySelector("#p-light").value = this._config.light_sensor || "";
-    this.querySelector("#p-battery").hass = this._hass;
-    this.querySelector("#p-moisture").hass = this._hass;
-    this.querySelector("#p-temp").hass = this._hass;
-    this.querySelector("#p-light").hass = this._hass;
-
-    const list = this.querySelector("#custom-list");
-    list.innerHTML = "";
-    this._config.custom_sensors.forEach((s, i) => {
-        const div = document.createElement("div");
-        div.className = "cust-row";
-        div.innerHTML = `
-            <input class="cust-n" data-idx="${i}" placeholder="Titre (ex: PH)" value="${s.name || ""}">
-            <ha-entity-picker class="cust-p" data-idx="${i}" value="${s.entity || ""}"></ha-entity-picker>
-            <input class="cust-u" data-idx="${i}" placeholder="Unité" value="${s.unit || ""}">
-            <button class="btn btn-del" data-idx="${i}">Supprimer</button>
-        `;
-        list.appendChild(div);
-        div.querySelector("ha-entity-picker").hass = this._hass;
-    });
-    this._attachEvents();
-  }
-
-  _attachEvents() {
-    const fire = (key, val) => {
-        this._config[key] = val;
-        this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true }));
+  _setupEvents() {
+    const fire = () => {
+      this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true }));
     };
 
-    this.querySelector("#in-name").onchange = (e) => fire("name", e.target.value);
-    this.querySelector("#in-plant-image").onchange = (e) => fire("plant_image", e.target.value);
-    
-    ["#p-battery", "#p-moisture", "#p-temp", "#p-light"].forEach(id => {
-        const el = this.querySelector(id);
-        const key = id === "#p-battery" ? "battery_sensor" : 
-                    id === "#p-moisture" ? "moisture_sensor" :
-                    id === "#p-temp" ? "temperature_sensor" : "light_sensor";
-        el.addEventListener("value-changed", (e) => fire(key, e.detail.value));
+    // Inputs standards
+    this.querySelectorAll("input[data-key]").forEach(i => {
+      i.onchange = (e) => { this._config[e.target.dataset.key] = e.target.value; fire(); };
     });
 
-    this.querySelectorAll(".cust-n").forEach(el => el.onchange = (e) => {
-        this._config.custom_sensors[e.target.dataset.idx].name = e.target.value;
-        fire("custom_sensors", this._config.custom_sensors);
+    // Pickers standards
+    this.querySelectorAll("ha-entity-picker[data-key]").forEach(p => {
+      p.addEventListener("value-changed", (e) => { this._config[p.dataset.key] = e.detail.value; fire(); });
     });
 
-    this.querySelectorAll(".cust-p").forEach(el => el.addEventListener("value-changed", (e) => {
-        this._config.custom_sensors[el.dataset.idx].entity = e.detail.value;
-        fire("custom_sensors", this._config.custom_sensors);
-    }));
-
-    this.querySelectorAll(".cust-u").forEach(el => el.onchange = (e) => {
-        this._config.custom_sensors[e.target.dataset.idx].unit = e.target.value;
-        fire("custom_sensors", this._config.custom_sensors);
+    // Inputs custom
+    this.querySelectorAll(".custom-item").forEach(item => {
+      const idx = item.querySelector(".btn-del").dataset.idx;
+      item.querySelector(".c-name").onchange = (e) => { this._config.custom_sensors[idx].name = e.target.value; fire(); };
+      item.querySelector(".c-unit").onchange = (e) => { this._config.custom_sensors[idx].unit = e.target.value; fire(); };
+      item.querySelector(".c-entity").addEventListener("value-changed", (e) => { 
+        this._config.custom_sensors[idx].entity = e.detail.value; 
+        fire(); 
+      });
+      item.querySelector(".btn-del").onclick = () => {
+        this._config.custom_sensors.splice(idx, 1);
+        fire();
+        this._render();
+      };
     });
 
     this.querySelector("#add-btn").onclick = () => {
-        this._config.custom_sensors.push({name: "", entity: "", unit: ""});
-        fire("custom_sensors", this._config.custom_sensors);
-        this._rendered = false; this._render();
+      this._config.custom_sensors.push({name: "", entity: "", unit: ""});
+      fire();
+      this._render();
     };
-
-    this.querySelectorAll(".btn-del").forEach(btn => btn.onclick = (e) => {
-        this._config.custom_sensors.splice(e.target.dataset.idx, 1);
-        fire("custom_sensors", this._config.custom_sensors);
-        this._rendered = false; this._render();
-    });
   }
 }
 
