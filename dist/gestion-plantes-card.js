@@ -182,46 +182,72 @@ class PlantCardEditor extends HTMLElement {
   }
 
   // ---- OpenPlantBook --------------------------------------------------------
-  async _opbSearch(query) {
-    const token = this._config.opb_token;
-    const status = this.querySelector("#opb-status");
+  // Obtenir un access_token OAuth2 via client_credentials
+  async _opbGetToken() {
+    const id  = (this._config.opb_client_id     || "").trim();
+    const sec = (this._config.opb_client_secret  || "").trim();
+    if (!id || !sec) throw new Error("Entrez votre client_id et client_secret d'abord.");
 
-    if (!token) {
-      status.textContent = "⚠ Entrez votre token OpenPlantBook d'abord.";
-      status.className = "opb-status err";
-      return;
+    const body = new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id:  id,
+      client_secret: sec,
+    });
+
+    const r = await fetch("https://open.plantbook.io/api/v1/token/", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+
+    if (!r.ok) {
+      const txt = await r.text().catch(() => "");
+      if (r.status === 401 || r.status === 400)
+        throw new Error("client_id ou client_secret invalide (" + r.status + ")");
+      throw new Error("Impossible d'obtenir le token OAuth2 (HTTP " + r.status + ")");
     }
+
+    const data = await r.json();
+    return data.access_token;
+  }
+
+  async _opbSearch(query) {
+    const status = this.querySelector("#opb-status");
     if (!query || query.length < 2) return;
 
-    status.textContent = "Recherche...";
+    status.textContent = "Connexion à OpenPlantBook...";
     status.className = "opb-status";
 
     try {
+      const accessToken = await this._opbGetToken();
+
+      status.textContent = "Recherche de : " + query + "...";
+
       const res = await fetch(
-        `https://open.plantbook.io/api/v1/plant/search/?alias=${encodeURIComponent(query)}&limit=10`,
-        { headers: { Authorization: `Token ${token}` } }
+        "https://open.plantbook.io/api/v1/plant/search/?alias=" + encodeURIComponent(query) + "&limit=10",
+        { headers: { Authorization: "Bearer " + accessToken } }
       );
 
       if (!res.ok) {
-        let body = "";
-        try { body = await res.text(); } catch(_) {}
-        if (res.status === 401 || res.status === 403) throw new Error("Token invalide ou expiré (401/403). Vérifiez sur open.plantbook.io → API Keys");
-        if (res.status === 404) throw new Error("Endpoint introuvable (404). Vérifiez la connexion Internet.");
-        throw new Error(`Erreur HTTP ${res.status}${body ? ": " + body.slice(0,100) : ""}`);
+        const body = await res.text().catch(() => "");
+        throw new Error("Erreur HTTP " + res.status + (body ? ": " + body.slice(0, 120) : ""));
       }
 
       const data = await res.json();
       const results = data.results || [];
 
       if (!results.length) {
-        status.textContent = "Aucun résultat pour cette plante.";
+        status.textContent = "Aucun résultat. Essayez le nom scientifique (ex: monstera deliciosa).";
         status.className = "opb-status err";
         this.querySelector("#opb-results").innerHTML = "";
         return;
       }
 
-      status.textContent = `${results.length} résultat(s) trouvé(s)`;
+      status.textContent = results.length + " résultat(s) trouvé(s)";
       status.className = "opb-status ok";
+
+      // Stocker le token temporairement pour _opbLoadPlant
+      this._opbAccessToken = accessToken;
 
       this.querySelector("#opb-results").innerHTML = results.map(p => `
         <div class="opb-item" data-pid="${p.pid}" data-alias="${p.display_pid || p.pid}">
@@ -237,29 +263,50 @@ class PlantCardEditor extends HTMLElement {
       });
 
     } catch (e) {
-      if (e.name === "TypeError") {
-        status.innerHTML = "Erreur réseau. Vérifiez votre connexion ou le token.<br><small>Si vous utilisez HTTPS, assurez-vous que le token est valide.</small>";
-      } else {
-        status.textContent = "Erreur : " + e.message;
-      }
+      status.textContent = "Erreur : " + e.message;
       status.className = "opb-status err";
     }
   }
 
   async _opbLoadPlant(pid, alias) {
-    const token = this._config.opb_token;
     const status = this.querySelector("#opb-status");
-    status.textContent = "Chargement des données...";
+    status.textContent = "Chargement des données de la plante...";
     status.className = "opb-status";
 
     try {
-      const res = await fetch(
-        `https://open.plantbook.io/api/v1/plant/detail/${pid}/`,
-        { headers: { Authorization: `Token ${token}` } }
-      );
-      if (!res.ok) throw new Error(`Erreur ${res.status}`);
-      const p = await res.json();
+      // Réutiliser le token stocké ou en obtenir un nouveau
+      if (!this._opbAccessToken) {
+        this._opbAccessToken = await this._opbGetToken();
+      }
 
+      const res = await fetch(
+        "https://open.plantbook.io/api/v1/plant/detail/" + pid + "/",
+        { headers: { Authorization: "Bearer " + this._opbAccessToken } }
+      );
+      if (!res.ok) {
+        // Token expiré ? Renouveler et réessayer
+        if (res.status === 401) {
+          this._opbAccessToken = await this._opbGetToken();
+          const retry = await fetch(
+            "https://open.plantbook.io/api/v1/plant/detail/" + pid + "/",
+            { headers: { Authorization: "Bearer " + this._opbAccessToken } }
+          );
+          if (!retry.ok) throw new Error("Erreur HTTP " + retry.status);
+          const p2 = await retry.json();
+          return this._applyPlantData(p2, alias, status);
+        }
+        throw new Error("Erreur HTTP " + res.status);
+      }
+      const p = await res.json();
+      this._applyPlantData(p, alias, status);
+      return;
+    } catch (e) {
+      status.textContent = "Erreur : " + e.message;
+      status.className = "opb-status err";
+    }
+  }
+
+  _applyPlantData(p, alias, status) {
       // Mettre à jour le nom et l'identifiant
       this._config.opb_pid   = alias;
       this._config.name      = this._config.name || alias;
@@ -300,27 +347,19 @@ class PlantCardEditor extends HTMLElement {
 
       this._fire();
 
-      // Afficher le résumé des données
       const info = [
-        p.min_soil_moist != null ? `💧 Humidité : ${p.min_soil_moist}–${p.max_soil_moist}%` : null,
-        p.min_temp       != null ? `🌡 Temp : ${p.min_temp}–${p.max_temp}°C` : null,
-        p.min_light_lux  != null ? `☀️ Lumière : ${p.min_light_lux}–${p.max_light_lux} lx` : null,
-        p.min_soil_ec    != null ? `🌿 Engrais : ${p.min_soil_ec}–${p.max_soil_ec} µS/cm` : null,
+        p.min_soil_moist != null ? "Humidite : " + p.min_soil_moist + "-" + p.max_soil_moist + "%" : null,
+        p.min_temp       != null ? "Temp : " + p.min_temp + "-" + p.max_temp + "C" : null,
+        p.min_light_lux  != null ? "Lumiere : " + p.min_light_lux + "-" + p.max_light_lux + " lx" : null,
+        p.min_soil_ec    != null ? "Engrais : " + p.min_soil_ec + "-" + p.max_soil_ec + " uS/cm" : null,
       ].filter(Boolean).join(" · ");
 
-      status.innerHTML = `<b>&#10003; ${alias}</b> appliqué${applied > 0 ? ` (${applied} seuil(s) mis à jour)` : ""}<br><small>${info}</small>`;
+      status.innerHTML = "<b>&#10003; " + alias + "</b> applique" + (applied > 0 ? " (" + applied + " seuil(s) mis a jour)" : "") + "<br><small>" + info + "</small>";
       status.className = "opb-status ok";
 
-      // Reconstruire les sensors pour voir les nouvelles valeurs
       this._buildSensors();
-      // Sync le nom
       const fn = this.querySelector("#f-name");
       if (fn) fn.value = this._config.name;
-
-    } catch (e) {
-      status.textContent = "Erreur : " + e.message;
-      status.className = "opb-status err";
-    }
   }
 
   // ---- Build ----------------------------------------------------------------
@@ -386,11 +425,14 @@ class PlantCardEditor extends HTMLElement {
           <div class="opb-title">&#127807; OpenPlantBook</div>
           <div class="opb-help">
             Recherchez votre plante pour récupérer automatiquement les seuils recommandés (humidité, température, lumière…).<br>
-            Token gratuit sur <a href="https://open.plantbook.io" target="_blank">open.plantbook.io</a><br><b>Astuce :</b> utilisez le nom scientifique en anglais pour de meilleurs résultats.
+            Créez un compte sur <a href="https://open.plantbook.io" target="_blank">open.plantbook.io</a> → <b>API Keys</b> pour obtenir votre <b>client_id</b> et <b>client_secret</b>.<br><b>Astuce :</b> utilisez le nom scientifique en anglais (ex: monstera deliciosa).
           </div>
-          <div class="field"><label>Token API</label>
+          <div class="field"><label>Client ID</label>
+            <input class="ti" id="opb-client-id" placeholder="Votre client_id" value="${this._config.opb_client_id || ""}">
+          </div>
+          <div class="field"><label>Client Secret</label>
             <div style="display:flex;gap:8px">
-              <input class="ti" id="opb-token" type="password" placeholder="Votre token OpenPlantBook" value="${this._config.opb_token || ""}" style="flex:1">
+              <input class="ti" id="opb-client-secret" type="password" placeholder="Votre client_secret" value="${this._config.opb_client_secret || ""}" style="flex:1">
               <button id="opb-test-btn" style="padding:8px 12px;background:#388e3c;color:white;border:none;border-radius:6px;cursor:pointer;white-space:nowrap;font-size:13px">&#10003; Tester</button>
             </div>
             <div id="opb-token-status" style="font-size:11px;margin-top:4px;color:#555"></div>
@@ -433,36 +475,37 @@ class PlantCardEditor extends HTMLElement {
 
       </div>`;
 
-    // Token OPB
-    const tokInput = this.querySelector("#opb-token");
+    // Client ID et Client Secret OPB
+    const cidInput = this.querySelector("#opb-client-id");
+    const secInput = this.querySelector("#opb-client-secret");
     const tokStatus = this.querySelector("#opb-token-status");
-    tokInput.addEventListener("change", () => { this._config.opb_token = tokInput.value; this._fire(); });
 
-    // Bouton tester le token
+    if (cidInput) cidInput.addEventListener("change", () => { this._config.opb_client_id = cidInput.value; this._opbAccessToken = null; this._fire(); });
+    if (secInput) secInput.addEventListener("change", () => { this._config.opb_client_secret = secInput.value; this._opbAccessToken = null; this._fire(); });
+
+    // Bouton tester les credentials
     const testBtn = this.querySelector("#opb-test-btn");
     if (testBtn) {
       testBtn.onclick = async () => {
-        const tok = tokInput.value.trim();
-        if (!tok) { tokStatus.textContent = "⚠ Entrez un token d'abord."; tokStatus.style.color = "#c62828"; return; }
         tokStatus.textContent = "Test en cours..."; tokStatus.style.color = "#555";
         try {
+          this._opbAccessToken = null;
+          const tok = await this._opbGetToken();
+          // Faire une vraie recherche test
           const r = await fetch("https://open.plantbook.io/api/v1/plant/search/?alias=monstera&limit=1", {
-            headers: { Authorization: "Token " + tok }
+            headers: { Authorization: "Bearer " + tok }
           });
-          if (r.status === 200) {
+          if (r.ok) {
             const d = await r.json();
-            tokStatus.textContent = "✓ Token valide ! (" + (d.count || "?") + " plantes trouvées pour 'monstera')";
+            tokStatus.textContent = "✓ Connexion réussie ! (" + (d.count || "?") + " plantes dans la base)";
             tokStatus.style.color = "#2e7d32";
-            this._config.opb_token = tok; this._fire();
-          } else if (r.status === 401 || r.status === 403) {
-            tokStatus.textContent = "✗ Token invalide ou expiré (code " + r.status + ")";
-            tokStatus.style.color = "#c62828";
+            this._opbAccessToken = tok;
           } else {
-            tokStatus.textContent = "Réponse inattendue : HTTP " + r.status;
+            tokStatus.textContent = "✗ Erreur après authentification : HTTP " + r.status;
             tokStatus.style.color = "#c62828";
           }
         } catch(e) {
-          tokStatus.textContent = "✗ Erreur réseau : " + e.message;
+          tokStatus.textContent = "✗ " + e.message;
           tokStatus.style.color = "#c62828";
         }
       };
