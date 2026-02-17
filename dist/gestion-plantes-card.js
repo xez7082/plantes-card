@@ -198,14 +198,16 @@ class PlantCardEditor extends HTMLElement {
 
     try {
       const res = await fetch(
-        `https://open.plantbook.io/api/v1/plant/search/?plant_pid=${encodeURIComponent(query)}&limit=10`,
+        `https://open.plantbook.io/api/v1/plant/search/?alias=${encodeURIComponent(query)}&limit=10`,
         { headers: { Authorization: `Token ${token}` } }
       );
 
       if (!res.ok) {
-        if (res.status === 401 || res.status === 403) throw new Error("Token invalide ou expiré. Vérifiez sur open.plantbook.io");
-        if (res.status === 404) throw new Error("Plante introuvable. Essayez le nom scientifique en anglais (ex: monstera deliciosa).");
-        throw new Error(`Erreur ${res.status}`);
+        let body = "";
+        try { body = await res.text(); } catch(_) {}
+        if (res.status === 401 || res.status === 403) throw new Error("Token invalide ou expiré (401/403). Vérifiez sur open.plantbook.io → API Keys");
+        if (res.status === 404) throw new Error("Endpoint introuvable (404). Vérifiez la connexion Internet.");
+        throw new Error(`Erreur HTTP ${res.status}${body ? ": " + body.slice(0,100) : ""}`);
       }
 
       const data = await res.json();
@@ -222,10 +224,10 @@ class PlantCardEditor extends HTMLElement {
       status.className = "opb-status ok";
 
       this.querySelector("#opb-results").innerHTML = results.map(p => `
-        <div class="opb-item" data-pid="${p.pid}" data-alias="${p.display_pid || p.alias}">
-          <div class="opb-name">${p.display_pid || p.alias}</div>
-          <div class="opb-sub">${p.alias}</div>
-          <button class="opb-btn" data-pid="${p.pid}" data-alias="${p.display_pid || p.alias}">
+        <div class="opb-item" data-pid="${p.pid}" data-alias="${p.display_pid || p.pid}">
+          <div class="opb-name">${p.display_pid || p.pid}</div>
+          <div class="opb-sub">${p.pid}</div>
+          <button class="opb-btn" data-pid="${p.pid}" data-alias="${p.display_pid || p.pid}">
             &#10003; Utiliser
           </button>
         </div>`).join("");
@@ -235,7 +237,11 @@ class PlantCardEditor extends HTMLElement {
       });
 
     } catch (e) {
-      status.textContent = "Erreur : " + e.message;
+      if (e.name === "TypeError") {
+        status.innerHTML = "Erreur réseau. Vérifiez votre connexion ou le token.<br><small>Si vous utilisez HTTPS, assurez-vous que le token est valide.</small>";
+      } else {
+        status.textContent = "Erreur : " + e.message;
+      }
       status.className = "opb-status err";
     }
   }
@@ -383,7 +389,11 @@ class PlantCardEditor extends HTMLElement {
             Token gratuit sur <a href="https://open.plantbook.io" target="_blank">open.plantbook.io</a><br><b>Astuce :</b> utilisez le nom scientifique en anglais pour de meilleurs résultats.
           </div>
           <div class="field"><label>Token API</label>
-            <input class="ti" id="opb-token" type="password" placeholder="Votre token OpenPlantBook" value="${this._config.opb_token || ""}">
+            <div style="display:flex;gap:8px">
+              <input class="ti" id="opb-token" type="password" placeholder="Votre token OpenPlantBook" value="${this._config.opb_token || ""}" style="flex:1">
+              <button id="opb-test-btn" style="padding:8px 12px;background:#388e3c;color:white;border:none;border-radius:6px;cursor:pointer;white-space:nowrap;font-size:13px">&#10003; Tester</button>
+            </div>
+            <div id="opb-token-status" style="font-size:11px;margin-top:4px;color:#555"></div>
           </div>
           <div class="field"><label>Rechercher une plante</label>
             <div class="opb-row">
@@ -425,7 +435,38 @@ class PlantCardEditor extends HTMLElement {
 
     // Token OPB
     const tokInput = this.querySelector("#opb-token");
+    const tokStatus = this.querySelector("#opb-token-status");
     tokInput.addEventListener("change", () => { this._config.opb_token = tokInput.value; this._fire(); });
+
+    // Bouton tester le token
+    const testBtn = this.querySelector("#opb-test-btn");
+    if (testBtn) {
+      testBtn.onclick = async () => {
+        const tok = tokInput.value.trim();
+        if (!tok) { tokStatus.textContent = "⚠ Entrez un token d'abord."; tokStatus.style.color = "#c62828"; return; }
+        tokStatus.textContent = "Test en cours..."; tokStatus.style.color = "#555";
+        try {
+          const r = await fetch("https://open.plantbook.io/api/v1/plant/search/?alias=monstera&limit=1", {
+            headers: { Authorization: "Token " + tok }
+          });
+          if (r.status === 200) {
+            const d = await r.json();
+            tokStatus.textContent = "✓ Token valide ! (" + (d.count || "?") + " plantes trouvées pour 'monstera')";
+            tokStatus.style.color = "#2e7d32";
+            this._config.opb_token = tok; this._fire();
+          } else if (r.status === 401 || r.status === 403) {
+            tokStatus.textContent = "✗ Token invalide ou expiré (code " + r.status + ")";
+            tokStatus.style.color = "#c62828";
+          } else {
+            tokStatus.textContent = "Réponse inattendue : HTTP " + r.status;
+            tokStatus.style.color = "#c62828";
+          }
+        } catch(e) {
+          tokStatus.textContent = "✗ Erreur réseau : " + e.message;
+          tokStatus.style.color = "#c62828";
+        }
+      };
+    }
 
     // Recherche OPB
     const opbQuery = this.querySelector("#opb-query");
