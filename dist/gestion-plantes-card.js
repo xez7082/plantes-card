@@ -1,4 +1,4 @@
-// PLANT CARD PRO v3.1.4 - Scanner de Diagnostic
+// PLANT CARD PRO v3.1.5 - Correction Entité openplantbook.search_result
 class PlantCard extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); }
   static getConfigElement() { return document.createElement("plant-card-editor"); }
@@ -20,7 +20,8 @@ class PlantCard extends HTMLElement {
         .title{font-size:1.4em;font-weight:bold;color:#4caf50}
         .opb-sub{font-size:11px;color:#81c784;opacity:.7;margin-top:2px}
         .bat{display:flex;align-items:center;gap:4px;font-size:.9em;font-weight:600;color:${batColor}}
-        .plant-img{display:block;width:120px;height:120px;object-fit:cover;margin:0 auto 20px;border-radius:50%;border:3px solid #4caf50}
+        .bat ha-icon{--mdc-icon-size:20px}
+        .plant-img{display:block;width:120px;height:120px;object-fit:cover;margin:0 auto 20px;border-radius:50%;border:3px solid #4caf50;box-shadow:0 4px 10px rgba(0,0,0,.5)}
         .srow{margin-bottom:14px}
         .info{display:flex;align-items:center;font-size:14px;margin-bottom:6px}
         .info ha-icon{margin-right:10px;--mdc-icon-size:20px;color:#4caf50}
@@ -60,7 +61,7 @@ class PlantCardEditor extends HTMLElement {
   async _opbSearch(query) {
     const status = this.querySelector("#opb-status");
     const results = this.querySelector("#opb-results");
-    status.textContent = "🔍 Recherche...";
+    status.textContent = "🔍 Recherche en cours...";
     results.innerHTML = "";
     
     try {
@@ -68,49 +69,76 @@ class PlantCardEditor extends HTMLElement {
       await new Promise(r => setTimeout(r, 2000));
       
       let found = null;
-      let foundInEntity = "";
-      const opbEntities = [];
+      // Cible directe de l'entité identifiée
+      const opbState = this._hass.states["openplantbook.search_result"];
 
-      for (const eid in this._hass.states) {
-        if (eid.includes("openplantbook")) {
-          opbEntities.push(eid);
-          const s = this._hass.states[eid];
-          // On cherche dans tous les attributs possibles
-          const data = s.attributes.results || s.attributes.data || s.attributes.plant_list || s.attributes.items;
-          if (data) { found = data; foundInEntity = eid; break; }
+      if (opbState) {
+        // Cas 1 : Les résultats sont dans les attributs (format JSON)
+        found = opbState.attributes.results || opbState.attributes.data;
+        
+        // Cas 2 : Les résultats sont dans l'état principal (format Texte brut)
+        if (!found && opbState.state && opbState.state !== "unknown") {
+          const lines = opbState.state.split('\n');
+          if (lines.length > 0 && lines[0].includes(':')) {
+            found = lines.map(line => {
+              const parts = line.split(':');
+              return { pid: parts[0].trim(), display_pid: parts[1] ? parts[1].trim() : parts[0].trim() };
+            });
+          }
         }
       }
 
-      if (!found) {
-        status.innerHTML = `<span style="color:red">❌ Données introuvables.</span><br>Entités détectées :<br>${opbEntities.join("<br>")}`;
+      if (!found || found.length === 0) {
+        status.innerHTML = `<span style="color:red">❌ Liste vide dans 'openplantbook.search_result'.</span>`;
         return;
       }
       
       const list = Array.isArray(found) ? found : Object.values(found);
-      status.textContent = "✅ Sélectionnez votre plante :";
+      status.textContent = "✅ Résultats :";
       results.innerHTML = list.map(p => `
-        <div style="display:flex;justify-content:space-between;align-items:center;background:#fff;padding:8px;margin-bottom:5px;border-radius:5px;color:#333;border:1px solid #ccc">
-          <div style="font-size:11px"><b>${p.display_pid || p.pid}</b><br>${p.pid}</div>
-          <button style="background:#4caf50;color:white;border:none;padding:5px;border-radius:4px" onclick="this.closest('plant-card-editor')._opbLoadPlant('${p.pid}')">Utiliser</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;background:#fff;padding:8px;margin-bottom:5px;border-radius:5px;color:#333;border:1px solid #4caf50">
+          <div style="font-size:11px"><b>${p.display_pid || p.pid}</b><br><small>${p.pid}</small></div>
+          <button style="background:#4caf50;color:white;border:none;padding:5px 8px;border-radius:4px;cursor:pointer" onclick="this.closest('plant-card-editor')._opbLoadPlant('${p.pid}')">Utiliser</button>
         </div>`).join("");
     } catch(e) { status.textContent = "Erreur : " + e.message; }
   }
 
   async _opbLoadPlant(pid) {
-    await this._hass.callService("openplantbook", "get_plant", { plant_pid: pid });
-    await new Promise(r => setTimeout(r, 1500));
-    const plant = Object.values(this._hass.states).find(s => s.attributes?.pid === pid || s.attributes?.plant_pid === pid);
-    if (plant) {
-      const a = plant.attributes;
-      this._config.opb_pid = pid;
-      this._config.sensors.forEach(s => {
-        const n = s.name.toLowerCase();
-        if (n.includes("humid") || n.includes("sol")) { s.warn_below = a.min_soil_moist; s.danger_above = a.max_soil_moist; s.icon="mdi:water"; s.max=100; }
-        if (n.includes("temp")) { s.warn_below = a.min_temp; s.danger_above = a.max_temp; s.icon="mdi:thermometer"; s.max=50; }
-      });
-      this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true }));
-      this._render();
-    }
+    const status = this.querySelector("#opb-status");
+    status.textContent = "📥 Importation de " + pid + "...";
+    try {
+      await this._hass.callService("openplantbook", "get_plant", { plant_pid: pid });
+      await new Promise(r => setTimeout(r, 1500));
+      
+      // On cherche l'entité qui contient les détails de la plante
+      const plant = Object.values(this._hass.states).find(s => 
+        (s.attributes?.pid === pid || s.attributes?.plant_pid === pid) || 
+        (s.entity_id.includes("openplantbook") && s.attributes?.species === pid)
+      );
+
+      if (plant) {
+        const a = plant.attributes;
+        this._config.opb_pid = pid;
+        this._config.name = this._config.name || a.display_pid || pid;
+        
+        this._config.sensors.forEach(s => {
+          const n = (s.name || "").toLowerCase();
+          if (n.includes("humid") || n.includes("sol")) { 
+            s.warn_below = a.min_soil_moist; s.danger_above = a.max_soil_moist; s.icon="mdi:water"; s.max=100; s.unit="%";
+          }
+          if (n.includes("temp")) { 
+            s.warn_below = a.min_temp; s.danger_above = a.max_temp; s.icon="mdi:thermometer"; s.max=50; s.unit="°C";
+          }
+          if (n.includes("lum") || n.includes("lux")) {
+            s.warn_below = a.min_light_lux; s.danger_above = a.max_light_lux; s.icon="mdi:white-balance-sunny"; s.max=a.max_light_lux * 1.2; s.unit="lux";
+          }
+        });
+        
+        this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true }));
+        status.textContent = "✅ Configurée pour " + pid;
+        this._render();
+      }
+    } catch(e) { status.textContent = "Erreur import : " + e.message; }
   }
 
   _render() {
@@ -123,19 +151,19 @@ class PlantCardEditor extends HTMLElement {
         .scard{background:white;padding:10px;border:1px solid #ddd;border-radius:8px;margin-bottom:8px}
       </style>
       <div class="edit-wrap">
-        <div class="section" style="background:#e8f5e9">
+        <div class="section" style="background:#e8f5e9; border: 1px solid #4caf50">
           <label>🌿 Recherche OpenPlantBook</label>
-          <div style="display:flex;gap:5px"><input id="q" placeholder="Spathiphyllum"><button id="sq" style="background:#4caf50;color:white;border:none;border-radius:5px;padding:0 10px">OK</button></div>
-          <div id="opb-status" style="font-size:11px;margin-top:5px"></div>
+          <div style="display:flex;gap:5px"><input id="q" placeholder="Spathiphyllum"><button id="sq" style="background:#4caf50;color:white;border:none;border-radius:5px;padding:0 15px;cursor:pointer">Chercher</button></div>
+          <div id="opb-status" style="font-size:11px;margin-top:5px;font-weight:bold"></div>
           <div id="opb-results"></div>
         </div>
         <div class="section">
-          <label>Nom</label><input id="n" value="${this._config.name||""}">
-          <label>Image</label><input id="img" value="${this._config.plant_image||""}">
-          <label>Batterie</label><input id="bat" value="${this._config.battery_sensor||""}">
+          <label>Nom de la plante</label><input id="n" value="${this._config.name||""}">
+          <label>Image URL</label><input id="img" value="${this._config.plant_image||""}">
+          <label>Capteur Batterie</label><input id="bat" value="${this._config.battery_sensor||""}">
         </div>
         <div id="s-list"></div>
-        <button id="add" style="width:100%;padding:10px;background:#4caf50;color:white;border:none;border-radius:8px">+ Ajouter Capteur</button>
+        <button id="add" style="width:100%;padding:12px;background:#4caf50;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold">+ Ajouter un Capteur</button>
       </div>`;
 
     this.querySelector("#sq").onclick = () => this._opbSearch(this.querySelector("#q").value);
@@ -149,6 +177,7 @@ class PlantCardEditor extends HTMLElement {
       const d = document.createElement("div");
       d.className = "scard";
       d.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:12px">CAPTEUR ${i+1}</b><button class="del" style="color:red;border:none;background:none;cursor:pointer">Supprimer</button></div>
         <label>Nom</label><input class="sn" value="${s.name}">
         <label>Entité</label><input class="se" value="${s.entity}">
         <div style="display:flex;gap:5px">
@@ -156,10 +185,9 @@ class PlantCardEditor extends HTMLElement {
           <div><label>Unité</label><input class="su" value="${s.unit}"></div>
         </div>
         <div style="display:flex;gap:5px">
-          <div><label>Alerte Min</label><input class="sw" type="number" value="${s.warn_below||""}"></div>
-          <div><label>Alerte Max</label><input class="sd" type="number" value="${s.danger_above||""}"></div>
-        </div>
-        <button class="del" style="color:red;border:none;background:none;font-size:10px;margin-top:5px">Supprimer</button>`;
+          <div><label>Min (Alerte)</label><input class="sw" type="number" value="${s.warn_below||""}"></div>
+          <div><label>Max (Alerte)</label><input class="sd" type="number" value="${s.danger_above||""}"></div>
+        </div>`;
       
       d.querySelector(".sn").oninput = (e) => { this._config.sensors[i].name = e.target.value; this._fire(); };
       d.querySelector(".se").oninput = (e) => { this._config.sensors[i].entity = e.target.value; this._fire(); };
