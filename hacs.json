@@ -1,0 +1,7 @@
+{
+  "name": "Gestion des Plantes (xez7082)",
+  "description": "Carte avancée avec labels en français et support OpenPlantbook.",
+  "content_type": "plugin",
+  "render_readme": true,
+  "filename": "gestion-plantes-card.js"
+}
