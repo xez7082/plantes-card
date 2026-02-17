@@ -2,9 +2,6 @@
   "name": "Gestion des Plantes",
   "content_type": "plugin",
   "render_readme": true,
-  "file": "gestion-plantes-card.js",
+  "file": "/dist/gestion-plantes-card.js",
   "zip_release": false,
-  "manifest": {
-    "location": "/dist/gestion-plantes-card.js"
-  }
 }
