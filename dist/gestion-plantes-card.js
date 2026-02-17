@@ -1,10 +1,35 @@
-// PLANT CARD PRO v3.2.4 - Ajout du nom latin (sous-titre)
+// PLANT CARD PRO v3.3.0 - Glassmorphism Bleu
 class PlantCard extends HTMLElement {
-  constructor() { super(); this.attachShadow({ mode: "open" }); }
-  static getConfigElement() { return document.createElement("plant-card-editor"); }
-  static getStubConfig() { return { name: "Fleur de Lune", latin_name: "Spathiphyllum 'Coco Cupido'", plant_image: "https://www.fleuriste-marseille.com/wp-content/uploads/2021/04/spathiphyllum.jpg", sensors: [] }; }
-  setConfig(config) { this._config = JSON.parse(JSON.stringify(config)); this._render(); }
-  set hass(hass) { this._hass = hass; this._render(); }
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+
+  static getConfigElement() {
+    return document.createElement("plant-card-editor");
+  }
+
+  static getStubConfig() {
+    return {
+      name: "Fleur de Lune",
+      latin_name: "Spathiphyllum 'Coco Cupido'",
+      plant_image: "https://assets.floraccess.com/assets/plants/detail/spathiphyllum-sensation-xxl-fr.jpg",
+      sensors: [
+        { name: "Humidité Sol", entity: "sensor.miflora_moisture", icon: "mdi:water", unit: "%", max: 100, warn_below: 20, danger_above: 75 },
+        { name: "Température", entity: "sensor.miflora_temperature", icon: "mdi:thermometer", unit: "°C", max: 50, warn_below: 15, danger_above: 30 }
+      ]
+    };
+  }
+
+  setConfig(config) {
+    this._config = JSON.parse(JSON.stringify(config));
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
 
   _render() {
     if (!this._config || !this._hass) return;
@@ -15,22 +40,140 @@ class PlantCard extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
-        .card{background:var(--ha-card-background,#1c1c1c);border-radius:15px;padding:20px;color:white;border:1px solid #333;font-family:sans-serif}
-        .hrow{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:15px}
-        .title-group{display:flex;flex-direction:column}
-        .title{font-size:1.4em;font-weight:bold;color:#4caf50;line-height:1.1}
-        .latin{font-size:0.85em;font-style:italic;color:#81c784;opacity:0.8;margin-top:2px}
-        .bat{display:flex;align-items:center;gap:4px;font-size:14px;font-weight:600;color:${batColor}}
-        .plant-img{display:block;width:120px;height:120px;object-fit:cover;margin:0 auto 20px;border-radius:50%;border:3px solid #4caf50;box-shadow:0 4px 10px rgba(0,0,0,0.5)}
-        .srow{margin-bottom:14px}
-        .info{display:flex;align-items:center;font-size:14px;margin-bottom:6px}
-        .info ha-icon{margin-right:10px;--mdc-icon-size:20px;color:#4caf50}
-        .lbl{flex-grow:1;opacity:.9}
-        .val{font-weight:bold}
-        .bar-bg{background:rgba(255,255,255,.1);height:8px;border-radius:4px;overflow:hidden}
-        .bar-fill{background:linear-gradient(90deg,#4caf50,#81c784);height:100%;transition:width .8s ease}
-        .bar-warn{background:linear-gradient(90deg,#ff9800,#ffc107)}
-        .bar-danger{background:linear-gradient(90deg,#f44336,#ff5252)}
+        .card {
+          background: rgba(140, 198, 255, 0.1); /* Bleu clair très transparent */
+          backdrop-filter: blur(15px); /* Effet de flou derrière */
+          border-radius: 20px;
+          padding: 25px;
+          color: white;
+          font-family: 'Roboto', sans-serif;
+          border: 1px solid rgba(140, 198, 255, 0.3); /* Bordure bleue semi-transparente */
+          box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); /* Ombre légère pour la profondeur */
+          position: relative;
+          overflow: hidden; /* Important pour le fond image */
+          display: flex;
+          flex-direction: column;
+          min-height: 200px; /* Hauteur min pour voir l'effet */
+        }
+        
+        /* Fond image de la plante en Glassmorphism */
+        .card::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background-image: url('${c.plant_image || ""}');
+          background-size: cover;
+          background-position: center;
+          filter: blur(10px) brightness(0.7); /* Flou + obscurcissement de l'image de fond */
+          opacity: 0.3; /* Transparence de l'image de fond */
+          z-index: -1; /* Placer derrière le contenu */
+          border-radius: 20px; /* S'assurer que le blur ne dépasse pas les coins */
+        }
+
+        .hrow {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 20px;
+          z-index: 1; /* Assure que le texte est au-dessus de l'image floue */
+        }
+        .title-group {
+          display: flex;
+          flex-direction: column;
+        }
+        .title {
+          font-size: 1.6em;
+          font-weight: 700;
+          color: #e0f7fa; /* Bleu très clair */
+          line-height: 1.2;
+          text-shadow: 1px 1px 3px rgba(0,0,0,0.4);
+        }
+        .latin {
+          font-size: 0.9em;
+          font-style: italic;
+          color: #a7d9f7; /* Bleu plus doux */
+          opacity: 0.9;
+          margin-top: 2px;
+        }
+        .bat {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 1em;
+          font-weight: 600;
+          color: ${batColor};
+          background: rgba(255,255,255,0.15); /* Fond batterie semi-transparent */
+          padding: 5px 10px;
+          border-radius: 12px;
+          box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+          z-index: 1;
+        }
+        .bat ha-icon {
+          --mdc-icon-size: 20px;
+        }
+        
+        /* Image de la plante principale au centre (si configurée) */
+        .plant-main-img {
+          display: block;
+          width: 150px; /* Taille légèrement augmentée */
+          height: 150px;
+          object-fit: contain; /* Garde les proportions de l'image */
+          margin: 0 auto 25px;
+          border-radius: 15px; /* Coins arrondis pour l'image principale */
+          border: 3px solid rgba(255, 255, 255, 0.4); /* Bordure légère */
+          box-shadow: 0 6px 20px rgba(0,0,0,0.4); /* Ombre plus prononcée */
+          z-index: 1;
+        }
+
+        .srow {
+          background: rgba(255, 255, 255, 0.1); /* Fond des capteurs semi-transparent */
+          border-radius: 12px;
+          padding: 12px 15px;
+          margin-bottom: 12px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+          z-index: 1;
+        }
+        .info {
+          display: flex;
+          align-items: center;
+          font-size: 15px;
+          margin-bottom: 8px;
+        }
+        .info ha-icon {
+          margin-right: 12px;
+          --mdc-icon-size: 22px;
+          color: #7dd3fc; /* Bleu clair icônes */
+        }
+        .lbl {
+          flex-grow: 1;
+          opacity: 0.9;
+          font-weight: 500;
+        }
+        .val {
+          font-weight: 700;
+          color: #e0f7fa;
+        }
+        .bar-bg {
+          background: rgba(255, 255, 255, 0.15);
+          height: 10px;
+          border-radius: 5px;
+          overflow: hidden;
+        }
+        .bar-fill {
+          background: linear-gradient(90deg, #3b82f6, #60a5fa); /* Dégradé de bleu pour la barre */
+          height: 100%;
+          transition: width 0.8s ease;
+        }
+        .bar-warn {
+          background: linear-gradient(90deg, #f59e0b, #fbbf24); /* Orange pour avertissement */
+        }
+        .bar-danger {
+          background: linear-gradient(90deg, #ef4444, #f87171); /* Rouge pour danger */
+        }
       </style>
       <div class="card">
         <div class="hrow">
@@ -40,7 +183,7 @@ class PlantCard extends HTMLElement {
           </div>
           ${battVal != null ? `<div class="bat"><ha-icon icon="mdi:battery"></ha-icon>${battVal}%</div>` : ""}
         </div>
-        <img class="plant-img" src="${c.plant_image || ""}">
+        ${c.plant_image ? `<img class="plant-main-img" src="${c.plant_image}">` : ''}
         ${(c.sensors || []).map(s => {
           const st = this._hass.states[s.entity];
           const val = st ? st.state : "--";
@@ -57,6 +200,7 @@ class PlantCard extends HTMLElement {
   }
 }
 
+// L'éditeur reste le même que la v3.2.3 pour la stabilité
 class PlantCardEditor extends HTMLElement {
   setConfig(config) { this._config = JSON.parse(JSON.stringify(config)); this._render(); }
   set hass(hass) { this._hass = hass; }
