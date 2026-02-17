@@ -1,4 +1,4 @@
-// PLANT CARD PRO v3.2.1 - Version Stable (Saisie Manuelle)
+// PLANT CARD PRO v3.2.2 - Correction du défilement lors de la saisie
 class PlantCard extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); }
   static getConfigElement() { return document.createElement("plant-card-editor"); }
@@ -18,7 +18,7 @@ class PlantCard extends HTMLElement {
         .card{background:var(--ha-card-background,#1c1c1c);border-radius:15px;padding:20px;color:white;border:1px solid #333;font-family:sans-serif}
         .hrow{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:15px}
         .title{font-size:1.4em;font-weight:bold;color:#4caf50}
-        .bat{display:flex;align-items:center;gap:4px;font-size:.9em;font-weight:600;color:${batColor}}
+        .bat{display:flex;align-items:center;gap:4px;font-size:14px;font-weight:600;color:${batColor}}
         .plant-img{display:block;width:120px;height:120px;object-fit:cover;margin:0 auto 20px;border-radius:50%;border:3px solid #4caf50;box-shadow:0 4px 10px rgba(0,0,0,0.5)}
         .srow{margin-bottom:14px}
         .info{display:flex;align-items:center;font-size:14px;margin-bottom:6px}
@@ -57,6 +57,8 @@ class PlantCardEditor extends HTMLElement {
   set hass(hass) { this._hass = hass; }
 
   _render() {
+    if (this._initialRenderDone) return; // Empêche le re-rendu total à chaque frappe
+    
     this.innerHTML = `
       <style>
         .edit-wrap{padding:10px;font-family:sans-serif;color:#333}
@@ -64,55 +66,83 @@ class PlantCardEditor extends HTMLElement {
         input{width:100%;padding:8px;margin:5px 0;box-sizing:border-box;border-radius:5px;border:1px solid #ccc}
         label{font-size:12px;font-weight:bold;color:#666}
         .scard{background:white;padding:10px;border:1px solid #ddd;border-radius:8px;margin-bottom:8px}
+        .btn-add{width:100%;padding:12px;background:#4caf50;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold}
       </style>
       <div class="edit-wrap">
         <div class="section">
-          <label>Nom de la plante</label><input id="n" value="${this._config.name||""}">
-          <label>URL Image</label><input id="img" value="${this._config.plant_image||""}">
-          <label>Entité Batterie (optionnel)</label><input id="bat" value="${this._config.battery_sensor||""}">
+          <label>Nom de la plante</label><input id="n" data-conf="name" value="${this._config.name||""}">
+          <label>URL Image</label><input id="img" data-conf="plant_image" value="${this._config.plant_image||""}">
+          <label>Batterie (sensor...)</label><input id="bat" data-conf="battery_sensor" value="${this._config.battery_sensor||""}">
         </div>
         <div id="s-list"></div>
-        <button id="add" style="width:100%;padding:12px;background:#4caf50;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold">+ Ajouter un Capteur</button>
+        <button id="add" class="btn-add">+ Ajouter un Capteur</button>
       </div>`;
 
-    this.querySelector("#n").oninput = (e) => { this._config.name = e.target.value; this._fire(); };
-    this.querySelector("#img").oninput = (e) => { this._config.plant_image = e.target.value; this._fire(); };
-    this.querySelector("#bat").oninput = (e) => { this._config.battery_sensor = e.target.value; this._fire(); };
-    this.querySelector("#add").onclick = () => { this._config.sensors.push({name:"Humidité", entity:"", icon:"mdi:water", unit:"%", max:100, warn_below:20, danger_above:80}); this._fire(); this._render(); };
-    
+    this._initialRenderDone = true;
+    this._attachEvents();
+    this._renderSensors();
+  }
+
+  _attachEvents() {
+    this.querySelectorAll("input[data-conf]").forEach(el => {
+      el.addEventListener("change", (e) => {
+        this._config[e.target.dataset.conf] = e.target.value;
+        this._fire();
+      });
+    });
+    this.querySelector("#add").onclick = () => {
+      if(!this._config.sensors) this._config.sensors = [];
+      this._config.sensors.push({name:"Humidité", entity:"", icon:"mdi:water", unit:"%", max:100, warn_below:20, danger_above:80});
+      this._fire();
+      this._renderSensors();
+    };
+  }
+
+  _renderSensors() {
     const list = this.querySelector("#s-list");
-    this._config.sensors.forEach((s, i) => {
+    list.innerHTML = "";
+    (this._config.sensors || []).forEach((s, i) => {
       const d = document.createElement("div");
       d.className = "scard";
       d.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
           <b style="color:#4caf50">CAPTEUR ${i+1}</b>
-          <button class="del" style="color:#f44336;border:none;background:none;cursor:pointer;font-weight:bold">Supprimer</button>
+          <button class="del" data-idx="${i}" style="color:#f44336;border:none;background:none;cursor:pointer;font-weight:bold">Supprimer</button>
         </div>
-        <label>Nom du paramètre (ex: Humidité Sol)</label><input class="sn" value="${s.name}">
-        <label>Entité (sensor...)</label><input class="se" value="${s.entity}">
+        <label>Nom</label><input class="sn" data-idx="${i}" value="${s.name}">
+        <label>Entité</label><input class="se" data-idx="${i}" value="${s.entity}">
         <div style="display:flex;gap:5px">
-          <div><label>Icône</label><input class="si" value="${s.icon}"></div>
-          <div><label>Unité</label><input class="su" value="${s.unit}"></div>
-          <div><label>Valeur Max Barème</label><input class="sm" type="number" value="${s.max}"></div>
+          <div><label>Icône</label><input class="si" data-idx="${i}" value="${s.icon}"></div>
+          <div><label>Unité</label><input class="su" data-idx="${i}" value="${s.unit}"></div>
+          <div><label>Max</label><input class="sm" data-idx="${i}" type="number" value="${s.max}"></div>
         </div>
         <div style="display:flex;gap:5px;margin-top:5px;background:#fff9c4;padding:5px;border-radius:5px">
-          <div><label>Alerte si < (Rouge)</label><input class="sw" type="number" value="${s.warn_below}"></div>
-          <div><label>Alerte si > (Rouge)</label><input class="sd" type="number" value="${s.danger_above}"></div>
+          <div><label>Min (Rouge)</label><input class="sw" data-idx="${i}" type="number" value="${s.warn_below}"></div>
+          <div><label>Max (Rouge)</label><input class="sd" data-idx="${i}" type="number" value="${s.danger_above}"></div>
         </div>`;
       
-      d.querySelector(".sn").oninput = (e) => { this._config.sensors[i].name = e.target.value; this._fire(); };
-      d.querySelector(".se").oninput = (e) => { this._config.sensors[i].entity = e.target.value; this._fire(); };
-      d.querySelector(".si").oninput = (e) => { this._config.sensors[i].icon = e.target.value; this._fire(); };
-      d.querySelector(".su").oninput = (e) => { this._config.sensors[i].unit = e.target.value; this._fire(); };
-      d.querySelector(".sm").oninput = (e) => { this._config.sensors[i].max = parseFloat(e.target.value); this._fire(); };
-      d.querySelector(".sw").oninput = (e) => { this._config.sensors[i].warn_below = parseFloat(e.target.value); this._fire(); };
-      d.querySelector(".sd").oninput = (e) => { this._config.sensors[i].danger_above = parseFloat(e.target.value); this._fire(); };
-      d.querySelector(".del").onclick = () => { this._config.sensors.splice(i, 1); this._fire(); this._render(); };
+      const upd = (cls, field, isNum) => {
+        d.querySelector(cls).addEventListener("change", (e) => {
+          this._config.sensors[i][field] = isNum ? parseFloat(e.target.value) : e.target.value;
+          this._fire();
+        });
+      };
+
+      upd(".sn", "name"); upd(".se", "entity"); upd(".si", "icon"); upd(".su", "unit");
+      upd(".sm", "max", true); upd(".sw", "warn_below", true); upd(".sd", "danger_above", true);
+      
+      d.querySelector(".del").onclick = () => {
+        this._config.sensors.splice(i, 1);
+        this._fire();
+        this._renderSensors();
+      };
       list.appendChild(d);
     });
   }
-  _fire() { this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true })); }
+
+  _fire() {
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true }));
+  }
 }
 
 customElements.define("plant-card", PlantCard);
