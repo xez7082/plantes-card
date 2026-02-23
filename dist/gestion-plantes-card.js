@@ -1,4 +1,4 @@
-// PLANT CARD PRO v3.4.0 - Version Compacte Glassmorphism
+// PLANT CARD PRO v3.4.2 - Badges entièrement configurables via l'éditeur
 class PlantCard extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); }
   static getConfigElement() { return document.createElement("plant-card-editor"); }
@@ -9,9 +9,13 @@ class PlantCard extends HTMLElement {
   _render() {
     if (!this._config || !this._hass) return;
     const c = this._config;
+    
+    // Récupération dynamique des états configurés
     const battObj = c.battery_sensor ? this._hass.states[c.battery_sensor] : null;
-    const battVal = battObj ? parseFloat(battObj.state) : null;
-    const batColor = battVal == null ? "#888" : battVal > 50 ? "#4caf50" : battVal > 20 ? "#ff9800" : "#f44336";
+    const soilObj = c.soil_badge_sensor ? this._hass.states[c.soil_badge_sensor] : null;
+    const dliObj = c.dli_badge_sensor ? this._hass.states[c.dli_badge_sensor] : null;
+
+    const getVal = (obj) => obj ? obj.state : "--";
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -19,7 +23,7 @@ class PlantCard extends HTMLElement {
           background: rgba(140, 198, 255, 0.1);
           backdrop-filter: blur(10px);
           border-radius: 15px;
-          padding: 12px; /* Réduit */
+          padding: 12px;
           color: white;
           font-family: sans-serif;
           border: 1px solid rgba(140, 198, 255, 0.2);
@@ -33,45 +37,60 @@ class PlantCard extends HTMLElement {
           filter: blur(8px) brightness(0.6); opacity: 0.2; z-index: -1;
         }
         .hrow { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-        .title { font-size: 1.1em; font-weight: bold; color: #e0f7fa; line-height: 1; }
+        .title { font-size: 1.1em; font-weight: bold; color: #e0f7fa; line-height: 1.1; }
         .latin { font-size: 0.75em; font-style: italic; color: #a7d9f7; opacity: 0.8; }
-        .bat { display: flex; align-items: center; gap: 3px; font-size: 11px; font-weight: bold; color: ${batColor}; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 8px; }
         
-        .main-content { display: flex; align-items: center; gap: 10px; }
-        .plant-main-img { width: 60px; height: 60px; object-fit: cover; border-radius: 10px; border: 2px solid rgba(255,255,255,0.3); flex-shrink: 0; }
-        
+        .badge { 
+          display: flex; align-items: center; gap: 4px; 
+          font-size: 10px; font-weight: bold; 
+          background: rgba(0,0,0,0.4); padding: 3px 8px; 
+          border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
+          color: #e0f7fa;
+        }
+        .badge ha-icon { --mdc-icon-size: 14px; color: #7dd3fc; }
+
+        .main-content { display: flex; align-items: flex-start; gap: 12px; margin-top: 5px; }
+        .image-col { display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0; }
+        .plant-main-img { width: 75px; height: 75px; object-fit: cover; border-radius: 12px; border: 2px solid rgba(255,255,255,0.2); }
+        .badge-list-under { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+
         .sensor-grid { flex-grow: 1; display: flex; flex-direction: column; gap: 6px; }
         .srow { background: rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 6px 10px; border: 1px solid rgba(255, 255, 255, 0.1); }
         .info { display: flex; align-items: center; font-size: 12px; margin-bottom: 4px; }
         .info ha-icon { margin-right: 6px; --mdc-icon-size: 16px; color: #7dd3fc; }
-        .lbl { flex-grow: 1; opacity: 0.8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .lbl { flex-grow: 1; opacity: 0.8; }
         .val { font-weight: bold; }
         .bar-bg { background: rgba(255, 255, 255, 0.1); height: 5px; border-radius: 3px; overflow: hidden; }
         .bar-fill { background: linear-gradient(90deg, #3b82f6, #60a5fa); height: 100%; transition: width 0.8s ease; }
-        .bar-warn { background: #f59e0b; }
-        .bar-danger { background: #ef4444; }
       </style>
+
       <div class="card">
         <div class="hrow">
           <div>
             <div class="title">${c.name || "Yucca"}</div>
             ${c.latin_name ? `<div class="latin">${c.latin_name}</div>` : ""}
           </div>
-          ${battVal != null ? `<div class="bat"><ha-icon icon="mdi:battery"></ha-icon>${battVal}%</div>` : ""}
+          ${battObj ? `<div class="badge"><ha-icon icon="mdi:battery"></ha-icon>${battObj.state}%</div>` : ""}
         </div>
+
         <div class="main-content">
-          ${c.plant_image ? `<img class="plant-main-img" src="${c.plant_image}">` : ''}
+          <div class="image-col">
+            ${c.plant_image ? `<img class="plant-main-img" src="${c.plant_image}">` : ''}
+            <div class="badge-list-under">
+              ${c.soil_badge_sensor ? `<div class="badge"><ha-icon icon="mdi:water-percent"></ha-icon>${getVal(soilObj)}%</div>` : ""}
+              ${c.dli_badge_sensor ? `<div class="badge"><ha-icon icon="mdi:sun-wireless"></ha-icon>${getVal(dliObj)}</div>` : ""}
+            </div>
+          </div>
+
           <div class="sensor-grid">
             ${(c.sensors || []).map(s => {
               const st = this._hass.states[s.entity];
               const val = st ? st.state : "--";
               const num = parseFloat(val);
-              const isDng = s.danger_above != null && num > s.danger_above;
-              const isWrn = s.warn_below != null && num < s.warn_below;
               const pct = s.max ? Math.min(Math.max((num / s.max) * 100, 0), 100) : Math.min(Math.max(num, 0), 100);
               return `<div class="srow">
                 <div class="info"><ha-icon icon="${s.icon || "mdi:sprout"}"></ha-icon><span class="lbl">${s.name}</span><span class="val">${val}${s.unit||""}</span></div>
-                <div class="bar-bg"><div class="${isDng?'bar-fill bar-danger':isWrn?'bar-fill bar-warn':'bar-fill'}" style="width:${isNaN(pct)?0:pct}%"></div></div>
+                <div class="bar-bg"><div class="bar-fill" style="width:${isNaN(pct)?0:pct}%"></div></div>
               </div>`;
             }).join("")}
           </div>
@@ -80,7 +99,6 @@ class PlantCard extends HTMLElement {
   }
 }
 
-// L'éditeur reste identique pour garder la main sur les réglages
 class PlantCardEditor extends HTMLElement {
   setConfig(config) { this._config = JSON.parse(JSON.stringify(config)); this._render(); }
   set hass(hass) { this._hass = hass; }
@@ -97,15 +115,20 @@ class PlantCardEditor extends HTMLElement {
         .del{color:#ff8a80;border:none;background:none;cursor:pointer;font-weight:bold;}
       </style>
       <div class="edit-wrap">
-        <h3 style="margin:0 0 10px 0;font-size:16px;">Config Compacte</h3>
+        <h3 style="margin:0 0 10px 0;font-size:16px;">Config Compacte Badges</h3>
         <div class="section">
-          <label>Nom</label><input id="n" data-conf="name" value="${this._config.name||""}">
-          <label>Latin</label><input id="lat" data-conf="latin_name" value="${this._config.latin_name||""}">
-          <label>Image</label><input id="img" data-conf="plant_image" value="${this._config.plant_image||""}">
-          <label>Batterie</label><input id="bat" data-conf="battery_sensor" value="${this._config.battery_sensor||""}">
+          <label>Nom & Latin</label>
+          <input id="n" data-conf="name" placeholder="Nom commun" value="${this._config.name||""}">
+          <input id="lat" data-conf="latin_name" placeholder="Nom latin" value="${this._config.latin_name||""}">
+          <label>Apparence</label>
+          <input id="img" data-conf="plant_image" placeholder="URL Image" value="${this._config.plant_image||""}">
+          <label>Badges (Entités)</label>
+          <input id="bat" data-conf="battery_sensor" placeholder="Entité Batterie" value="${this._config.battery_sensor||""}">
+          <input id="soil" data-conf="soil_badge_sensor" placeholder="Entité Humidité Sol" value="${this._config.soil_badge_sensor||""}">
+          <input id="dli" data-conf="dli_badge_sensor" placeholder="Entité DLI" value="${this._config.dli_badge_sensor||""}">
         </div>
         <div id="s-list"></div>
-        <button id="add" class="btn-add">+ CAPTEUR</button>
+        <button id="add" class="btn-add">+ CAPTEUR LIGNE</button>
       </div>`;
     this._initialRenderDone = true;
     this._attachEvents();
@@ -117,7 +140,7 @@ class PlantCardEditor extends HTMLElement {
     });
     this.querySelector("#add").onclick = () => {
       if(!this._config.sensors) this._config.sensors = [];
-      this._config.sensors.push({name:"Humidité", entity:"", icon:"mdi:water", unit:"%", max:100, warn_below:20, danger_above:80});
+      this._config.sensors.push({name:"Temp", entity:"", icon:"mdi:thermometer", unit:"°C", max:50});
       this._fire(); this._renderSensors();
     };
   }
@@ -126,7 +149,7 @@ class PlantCardEditor extends HTMLElement {
     list.innerHTML = "";
     (this._config.sensors || []).forEach((s, i) => {
       const d = document.createElement("div"); d.className = "scard";
-      d.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;"><b style="font-size:11px;color:#60a5fa">SENS ${i+1}</b><button class="del">X</button></div>
+      d.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;"><b style="font-size:11px;color:#60a5fa">LIGNE ${i+1}</b><button class="del">X</button></div>
         <input class="sn" placeholder="Nom" value="${s.name}">
         <input class="se" placeholder="Entité" value="${s.entity}">
         <div style="display:flex;gap:4px">
